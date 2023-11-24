@@ -56,7 +56,6 @@ impl Profiler {
 
     pub(crate) fn run(&mut self) {
         log_info!("INFO: profiler start.");
-
         while self.running.load(Ordering::Acquire) {
             self.sleep_peroid(1);
         }

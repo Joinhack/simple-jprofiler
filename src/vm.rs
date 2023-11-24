@@ -19,6 +19,15 @@ pub struct JVMPICallFrame {
     pub method_id: jmethodID,
 }
 
+impl Default for JVMPICallFrame {
+    fn default() -> Self {
+        Self { 
+            lineno: 0, 
+            method_id: ptr::null_mut() 
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct JVMPICallTrace {
@@ -28,6 +37,16 @@ pub struct JVMPICallTrace {
     pub num_frames: jint,
     // The frames, callee first.
     pub frames: *mut JVMPICallFrame,
+}
+
+impl Default for JVMPICallTrace {
+    fn default() -> Self {
+        Self { 
+            env: ptr::null_mut(), 
+            num_frames: 0, 
+            frames: ptr::null_mut() 
+        }
+    }
 }
 
 type AsgcType = extern "C" fn(*mut JVMPICallTrace, jint, *const libc::c_void);

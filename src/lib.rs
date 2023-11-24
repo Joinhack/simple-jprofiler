@@ -1,5 +1,6 @@
 mod ctrl_svr;
 mod jvmti;
+mod circle_queue;
 mod jvmti_native;
 mod r#macro;
 mod profiler;
@@ -19,7 +20,7 @@ pub trait MaybeUninitTake<T> {
     fn take(self) -> T;
 }
 
-impl<T: Clone + Copy> MaybeUninitTake<T> for MaybeUninit<T> {
+impl<T: Copy> MaybeUninitTake<T> for MaybeUninit<T> {
     fn take(self) -> T {
         unsafe { *self.as_ptr() }
     }
