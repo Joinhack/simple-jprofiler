@@ -1,18 +1,16 @@
-mod jvmti_native;
-mod jvmti;
-mod signal_prof;
-mod r#macro;
 mod ctrl_svr;
+mod jvmti;
+mod jvmti_native;
+mod r#macro;
 mod profiler;
+mod signal_prof;
 mod vm;
 
-use std::{sync::Once, mem::MaybeUninit};
-use jvmti::{JvmtiEnvPtr, JavaVMPtr};
+use jvmti::{JavaVMPtr, JvmtiEnvPtr};
+use std::{mem::MaybeUninit, sync::Once};
 
+use crate::jvmti::{jint, JavaVM, JVMTI_VERSION};
 use crate::vm::VM;
-use crate::jvmti::{
-    JavaVM, JVMTI_VERSION, jint
-};
 
 static AGENT_START: Once = Once::new();
 static mut VM_INSTANCE: Option<VM> = None;
@@ -23,22 +21,16 @@ pub trait MaybeUninitTake<T> {
 
 impl<T: Clone + Copy> MaybeUninitTake<T> for MaybeUninit<T> {
     fn take(self) -> T {
-        unsafe {
-            *self.as_ptr()
-        }
+        unsafe { *self.as_ptr() }
     }
 }
 
 pub fn get_vm_mut() -> &'static mut VM {
-    unsafe {
-        VM_INSTANCE.as_mut().unwrap()
-    }
+    unsafe { VM_INSTANCE.as_mut().unwrap() }
 }
 
 pub fn get_vm() -> &'static VM {
-    unsafe {
-        VM_INSTANCE.as_ref().unwrap()
-    }
+    unsafe { VM_INSTANCE.as_ref().unwrap() }
 }
 
 pub fn set_vm(vm: VM) {
@@ -49,7 +41,7 @@ pub fn set_vm(vm: VM) {
 
 #[no_mangle]
 #[allow(non_snake_case, unused_variables)]
-pub extern "C" fn Agent_OnLoad (
+pub extern "C" fn Agent_OnLoad(
     jvm: JavaVMPtr,
     option: *const libc::c_char,
     revert: *const libc::c_void,

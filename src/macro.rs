@@ -1,4 +1,3 @@
-
 #[macro_export]
 macro_rules! log_info {
     ($($expr: tt)*) => {
@@ -13,12 +12,11 @@ macro_rules! log_error {
     }
 }
 
-
 #[macro_export]
 macro_rules! c_str {
     ($s: expr) => {
         concat!($s, "\0").as_ptr() as *const std::ffi::c_char
-    }
+    };
 }
 
 #[macro_export]
@@ -27,7 +25,7 @@ macro_rules! check_null {
         match $expr {
             None => None,
             Some(r) if r == std::ptr::null_mut() => None,
-            Some(r)  => Some(r),
+            Some(r) => Some(r),
         }
     };
 }
@@ -36,7 +34,7 @@ macro_rules! check_null {
 macro_rules! jni_method {
     ($jni: ident, $method: tt, $($expr: expr),+) => {
         unsafe {
-            check_null!((**$jni.inner()).$method.map(|n| 
+            check_null!((**$jni.inner()).$method.map(|n|
                 n($jni.inner(), $($expr),+)
             ))
         }
@@ -47,7 +45,7 @@ macro_rules! jni_method {
 macro_rules! jni_call_object_method {
     ($jni: ident, $($expr: expr),+) => {
         unsafe {
-            check_null!((**$jni.inner()).NewObject.map(|n| 
+            check_null!((**$jni.inner()).NewObject.map(|n|
                 n($jni.inner(), $($expr),+)
             ))
         }

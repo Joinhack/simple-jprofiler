@@ -1,12 +1,12 @@
-use std::{net::TcpListener, os::fd::AsRawFd};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::io::Read;
 use std::mem;
-use std::io::{Read};
 use std::ptr;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::{net::TcpListener, os::fd::AsRawFd};
 
 use crate::jvmti::{JNIEnv, JVMTI_THREAD_NORM_PRIORITY};
-use crate::{get_vm_mut, log_info};
 use crate::vm::VM;
+use crate::{get_vm_mut, log_info};
 
 pub struct CtrlSvr {
     listener: TcpListener,
@@ -24,23 +24,27 @@ impl CtrlSvr {
             let opt_ptr = &opt as *const libc::c_int;
             let opt_len = mem::size_of_val(&opt);
             libc::setsockopt(
-                raw_fd, 
-                libc::SOL_SOCKET, 
-                libc::SO_REUSEADDR, 
-                opt_ptr as _, 
-                opt_len as _
+                raw_fd,
+                libc::SOL_SOCKET,
+                libc::SO_REUSEADDR,
+                opt_ptr as _,
+                opt_len as _,
             );
         }
-        Self {
-            running,
-            listener
-        }
+        Self { running, listener }
     }
 
+    /// start the java thread which attach to native thread.
+    /// use jstack can be watched the thread.
     pub fn start(&mut self, jni: JNIEnv) {
         let jthr = VM::new_java_thread(jni, "Agent Controller Thread").unwrap();
         let jvmti = get_vm_mut().jvmti();
-        jvmti.run_agent_thread(jthr, Some(VM::ctrl_svr_start), ptr::null() as _, JVMTI_THREAD_NORM_PRIORITY as _);
+        jvmti.run_agent_thread(
+            jthr,
+            Some(VM::ctrl_svr_start),
+            ptr::null() as _,
+            JVMTI_THREAD_NORM_PRIORITY as _,
+        );
     }
 
     pub fn run(&mut self) {
@@ -50,9 +54,7 @@ impl CtrlSvr {
         while self.running.load(Ordering::Relaxed) {
             let (mut peer_stream, _) = self.listener.accept().unwrap();
             while let Ok(n) = peer_stream.read(&mut buf) {
-                let cmd = unsafe {
-                    std::str::from_utf8_unchecked(&buf[0..n])
-                };
+                let cmd = unsafe { std::str::from_utf8_unchecked(&buf[0..n]) };
                 if cmd.starts_with("start") {
                     get_vm_mut().start_prof()
                 }
@@ -67,5 +69,4 @@ impl CtrlSvr {
             }
         }
     }
-
 }
