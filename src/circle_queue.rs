@@ -1,4 +1,11 @@
-use std::{sync::atomic::{AtomicUsize, AtomicBool, Ordering}, time::Duration};
+use std::{
+    mem,
+    sync::atomic::{
+        AtomicUsize, AtomicBool, Ordering
+    }, 
+    time::Duration, 
+    alloc::{self, Layout}
+};
 
 use crate::{vm::{JVMPICallTrace, JVMPICallFrame}};
 
@@ -13,49 +20,90 @@ pub struct CallTraceHolder {
 
 impl CallTraceHolder {
     #[inline(always)]
-    pub fn new(holder: JVMPICallTrace) -> Self {
+    pub fn new(holder: &JVMPICallTrace) -> Self {
         Self { 
-            trace: holder, 
+            trace: *holder, 
             is_commit: AtomicBool::new(false)
         }
     }
 }
 
-struct CircleQueue {
+pub struct CircleQueue {
     i_idx: AtomicUsize,
     o_idx: AtomicUsize,
-    holder_mem: Vec<CallTraceHolder>,
-    frame_mem: Vec<Vec<JVMPICallFrame>>,
+    holders: *mut CallTraceHolder,
+    frames: *mut [JVMPICallFrame; FRAME_SIZE],
 }
 
 impl CircleQueue {
     pub fn new() -> Self {
         let i_idx = AtomicUsize::new(0);
         let o_idx = AtomicUsize::new(0);
-        let holder_mem = (0..HOLDER_SIZE)
-            .map(|_| CallTraceHolder::default())
-            .collect::<Vec<_>>();
-        let frame_mem = (0..HOLDER_SIZE)
-            .map(|_| {
-                (0..FRAME_SIZE)
-                    .map(|_| JVMPICallFrame::default())
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
+        let holders: *mut CallTraceHolder = Self::array_ptr(HOLDER_SIZE);
+        (0..HOLDER_SIZE).for_each(|i| {
+            unsafe {
+                *holders.add(i) = CallTraceHolder::default();
+            }
+        });
+        let frames = Self::frames_ptr();
         Self {
             i_idx,
             o_idx,
-            holder_mem,
-            frame_mem,
+            holders,
+            frames,
         }
     }
 
+    fn frames_ptr() -> *mut [JVMPICallFrame; FRAME_SIZE] {
+        Self::array_ptr::<_>(HOLDER_SIZE)
+    }
+
+    fn array_ptr<T>(size: usize) -> *mut T {
+        unsafe {
+            let layout = Layout::from_size_align_unchecked(
+                HOLDER_SIZE, 
+                mem::size_of::<T>()
+            );
+            alloc::alloc(layout) as *mut T
+        }
+    }
+
+    #[inline(always)]
     pub fn advice(i: usize) -> usize {
         return (i+1) % HOLDER_SIZE;
     }
 
-    pub fn push(&mut self, trace: JVMPICallTrace) -> bool {
-        let hodler = CallTraceHolder::new(trace);
+    #[inline(always)]
+    fn holders(&self, i: usize) -> &CallTraceHolder {
+        
+        unsafe {
+            &*self.holders.add(i)
+        }
+    }
+
+    #[inline(always)]
+    fn holders_mut(&mut self, i: usize) -> &mut CallTraceHolder {
+        unsafe {
+            &mut *self.holders.add(i)   
+        }
+    }
+
+    #[inline(always)]
+    fn frames(&self, i: usize) -> &[JVMPICallFrame; FRAME_SIZE] {
+        unsafe {
+            &*self.frames.add(i)   
+        }
+    }
+
+    #[inline(always)]
+    fn frames_mut(&self, i: usize) -> &mut [JVMPICallFrame; FRAME_SIZE] {
+        unsafe {
+            &mut *self.frames.add(i)   
+        }
+    }
+
+    pub fn push(&mut self, trace: &JVMPICallTrace) -> bool {
+        let hodler = CallTraceHolder::new(&trace);
         let mut i_idx;
         let mut next_i_idx;
         let mut o_idx;
@@ -75,8 +123,9 @@ impl CircleQueue {
                 break;
             }
         }
-        self.holder_mem[i_idx] = hodler;
-        self.holder_mem[i_idx].is_commit.store(true, Ordering::Release);
+
+        self.holders_mut(i_idx).is_commit = hodler.is_commit;
+        self.holders_mut(i_idx).is_commit.store(true, Ordering::Release);
         true
     }
 
@@ -86,11 +135,10 @@ impl CircleQueue {
         if o_idx == i_idx {
             return false;
         }
-        while !self.holder_mem[i_idx].is_commit.load(Ordering::Acquire) {
+        while !self.holders(o_idx).is_commit.load(Ordering::Acquire) {
             std::thread::sleep(Duration::from_micros(1));
         }
-        
-        self.holder_mem[o_idx].is_commit.store(false, Ordering::Release);
+        self.holders(o_idx).is_commit.store(false, Ordering::Release);
         self.o_idx.store(Self::advice(o_idx), Ordering::Relaxed);
 
         true

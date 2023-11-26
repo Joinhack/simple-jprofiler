@@ -6,6 +6,7 @@ mod r#macro;
 mod profiler;
 mod signal_prof;
 mod vm;
+mod os;
 
 use jvmti::{JavaVMPtr, JvmtiEnvPtr};
 use std::{mem::MaybeUninit, sync::Once};
@@ -47,6 +48,7 @@ pub extern "C" fn Agent_OnLoad(
     option: *const libc::c_char,
     revert: *const libc::c_void,
 ) -> jint {
+    let tid = os::OS::thread_id();
     AGENT_START.call_once(|| {
         let jvm: JavaVM = jvm.into();
         let mut jvmti = MaybeUninit::<JvmtiEnvPtr>::uninit();

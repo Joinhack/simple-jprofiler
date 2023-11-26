@@ -1,8 +1,14 @@
 use crate::ctrl_svr::CtrlSvr;
-use crate::jvmti::{JNIEnv, JNIEnvPtr, JavaVM, JvmtiEnv, JvmtiEnvPtr, JvmtiEventCallbacks};
-use crate::jvmti_native::{jint, jmethodID, jthread, JVMTI_ENABLE, JVMTI_EVENT_VM_INIT};
+use crate::jvmti::{
+    JNIEnv, JNIEnvPtr, JavaVM, JvmtiEnv, JvmtiEnvPtr, JvmtiEventCallbacks
+};
+use crate::jvmti_native::{
+    jint, jmethodID, jthread, JVMTI_ENABLE, JVMTI_EVENT_VM_INIT
+};
 use crate::profiler::Profiler;
-use crate::{c_str, check_null, get_vm, get_vm_mut, jni_method, log_error, MaybeUninitTake};
+use crate::{
+    c_str, check_null, get_vm, get_vm_mut, jni_method, log_error, MaybeUninitTake
+};
 use std::mem::{self, MaybeUninit};
 use std::ptr;
 
@@ -49,7 +55,7 @@ impl Default for JVMPICallTrace {
     }
 }
 
-type AsgcType = extern "C" fn(*mut JVMPICallTrace, jint, *const libc::c_void);
+type AsgcType = unsafe extern "C" fn(*mut JVMPICallTrace, jint, *const libc::c_void);
 
 pub struct VM {
     profiler: Profiler,
@@ -116,9 +122,12 @@ impl VM {
         _info: *const libc::siginfo_t,
         ucontext: *mut libc::c_void,
     ) {
-        let vm = get_vm();
+        let vm = get_vm_mut();
         let mut jvmti_trace = MaybeUninit::<JVMPICallTrace>::uninit();
-        (vm.asgc)(jvmti_trace.as_mut_ptr(), MAX_TRACE_DEEP as _, ucontext);
+        unsafe {
+            (vm.asgc)(jvmti_trace.as_mut_ptr(), MAX_TRACE_DEEP as _, ucontext);
+            vm.profiler.push_trace(&*jvmti_trace.as_ptr());
+        }
     }
 
     fn asgc_symbol() -> AsgcType {

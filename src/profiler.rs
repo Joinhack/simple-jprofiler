@@ -1,10 +1,16 @@
 use std::ptr;
 use std::sync::atomic::Ordering;
-use std::{sync::atomic::AtomicBool, time::Duration};
+use std::{
+    sync::atomic::AtomicBool, time::Duration
+};
 
 use crate::jvmti::{JNIEnv, JVMTI_THREAD_NORM_PRIORITY};
+use crate::log_error;
 use crate::signal_prof::{SigactionFn, SignalProf};
-use crate::{get_vm_mut, log_info, VM};
+use crate::vm::JVMPICallTrace;
+use crate::{
+    get_vm_mut, log_info, VM, circle_queue::CircleQueue
+};
 
 const DEFAULT_SIGNAL: u32 = 1;
 
@@ -13,13 +19,19 @@ const STATUS_CHECK_PERIOD: u32 = 100;
 pub struct Profiler {
     sigprof: SignalProf,
     running: AtomicBool,
+    queue: CircleQueue,
 }
 
 impl Profiler {
     pub fn new() -> Self {
         let sigprof = SignalProf::new(DEFAULT_SIGNAL, DEFAULT_SIGNAL);
         let running = AtomicBool::new(false);
-        Self { sigprof, running }
+        let queue = CircleQueue::new();
+        Self { 
+            sigprof, 
+            running,
+            queue
+        }
     }
 
     pub fn start(&mut self, jni: JNIEnv) {
@@ -54,10 +66,32 @@ impl Profiler {
         }
     }
 
+    pub fn push_trace(&mut self, trace: &JVMPICallTrace) {
+        self.queue.push(trace);
+    }
+
     pub(crate) fn run(&mut self) {
         log_info!("INFO: profiler start.");
-        while self.running.load(Ordering::Acquire) {
+        loop {
+            let mut count = 0;
+            while self.queue.pop() {
+                count += 1;
+            }
+            println!("ss");
+            if count > 200 {
+                if !self.sigprof.update_interval() {
+                    log_error!("ERROR: update interval error");
+                    return;
+                }
+            }
+            if !self.running.load(Ordering::Relaxed) {
+                
+                while self.queue.pop() {
+                }
+            }
+            println!("pop");
             self.sleep_peroid(1);
+            println!("---pop");
         }
     }
 
