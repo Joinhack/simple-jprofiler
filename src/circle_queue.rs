@@ -97,8 +97,14 @@ impl CircleQueue {
         }
     }
 
+    #[inline(always)]
+    fn write_handle(&mut self, idx: usize, holder:CallTraceHolder) {
+        let holder_mut = self.holders_mut(idx);
+        *holder_mut = holder;
+    }
+
     pub fn push(&mut self, trace: &JVMPICallTrace) -> bool {
-        let hodler = CallTraceHolder::new(&trace);
+        let holder = CallTraceHolder::new(&trace);
         let mut i_idx;
         let mut next_i_idx;
         let mut o_idx;
@@ -118,7 +124,7 @@ impl CircleQueue {
                 break;
             }
         }
-        *self.holders_mut(i_idx) = hodler;
+        self.write_handle(i_idx, holder);
         self.holders_mut(i_idx).is_commit.store(true, Ordering::Release);
         true
     }
