@@ -13,7 +13,7 @@ use crate::{
 };
 
 const DEFAULT_MIN_SIGNAL: u32 = 10;
-const DEFAULT_MAX_SIGNAL: u32 = 10;
+const DEFAULT_MAX_SIGNAL: u32 = 100;
 
 const STATUS_CHECK_PERIOD: u32 = 100;
 
@@ -78,8 +78,7 @@ impl Profiler {
             while self.queue.pop() {
                 count += 1;
             }
-            if count > 300 {
-                log_info!("INFO: adjust interval");
+            if count >= 200 {
                 if !self.sigprof.update_interval() {
                     log_error!("ERROR: update interval error");
                     return;
