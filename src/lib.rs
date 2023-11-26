@@ -61,7 +61,7 @@ pub extern "C" fn Agent_OnLoad(
         }
         let vm_inst = VM::new(jvm, jvmti.take().into());
         set_vm(vm_inst);
-        get_vm_mut().initial();
     });
+    get_vm_mut().initial();
     return 0;
 }

@@ -1,5 +1,4 @@
 use std::{
-    mem,
     sync::atomic::{
         AtomicUsize, AtomicBool, Ordering
     }, 
@@ -7,7 +6,7 @@ use std::{
     alloc::{self, Layout}
 };
 
-use crate::{vm::{JVMPICallTrace, JVMPICallFrame}};
+use crate::vm::{JVMPICallTrace, JVMPICallFrame};
 
 const HOLDER_SIZE: usize = 1024;
 const FRAME_SIZE: usize = 1024;
@@ -59,12 +58,9 @@ impl CircleQueue {
     }
 
     fn array_ptr<T>(size: usize) -> *mut T {
+        let layout = Layout::array::<T>(size).unwrap();
         unsafe {
-            let layout = Layout::from_size_align_unchecked(
-                HOLDER_SIZE, 
-                mem::size_of::<T>()
-            );
-            alloc::alloc(layout) as *mut T
+            alloc::alloc(layout) as _
         }
     }
 
@@ -75,7 +71,6 @@ impl CircleQueue {
 
     #[inline(always)]
     fn holders(&self, i: usize) -> &CallTraceHolder {
-        
         unsafe {
             &*self.holders.add(i)
         }
@@ -123,8 +118,7 @@ impl CircleQueue {
                 break;
             }
         }
-
-        self.holders_mut(i_idx).is_commit = hodler.is_commit;
+        *self.holders_mut(i_idx) = hodler;
         self.holders_mut(i_idx).is_commit.store(true, Ordering::Release);
         true
     }
@@ -140,7 +134,6 @@ impl CircleQueue {
         }
         self.holders(o_idx).is_commit.store(false, Ordering::Release);
         self.o_idx.store(Self::advice(o_idx), Ordering::Relaxed);
-
         true
     }
 }

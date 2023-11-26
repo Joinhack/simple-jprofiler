@@ -4,6 +4,7 @@ use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{net::TcpListener, os::fd::AsRawFd};
 
+use crate::c_str;
 use crate::jvmti::{JNIEnv, JVMTI_THREAD_NORM_PRIORITY};
 use crate::vm::VM;
 use crate::{get_vm_mut, log_info};
@@ -37,7 +38,7 @@ impl CtrlSvr {
     /// start the java thread which attach to native thread.
     /// use jstack can be watched the thread.
     pub fn start(&mut self, jni: JNIEnv) {
-        let jthr = VM::new_java_thread(jni, "Agent Controller Thread").unwrap();
+        let jthr = VM::new_java_thread(jni, c_str!("Agent Controller Thread")).unwrap();
         let jvmti = get_vm_mut().jvmti();
         jvmti.run_agent_thread(
             jthr,

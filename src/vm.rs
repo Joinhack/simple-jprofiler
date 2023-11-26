@@ -7,7 +7,7 @@ use crate::jvmti_native::{
 };
 use crate::profiler::Profiler;
 use crate::{
-    c_str, check_null, get_vm, get_vm_mut, jni_method, log_error, MaybeUninitTake
+    c_str, check_null, get_vm_mut, jni_method, log_error, MaybeUninitTake
 };
 use std::mem::{self, MaybeUninit};
 use std::ptr;
@@ -187,7 +187,7 @@ impl VM {
         get_vm_mut().profiler.run();
     }
 
-    pub fn new_java_thread(jni: JNIEnv, thr_name: &str) -> Option<jthread> {
+    pub fn new_java_thread(jni: JNIEnv, thr_name: *const i8) -> Option<jthread> {
         unsafe {
             (**jni.inner())
                 .FindClass
@@ -212,9 +212,8 @@ impl VM {
             Some(obj) => obj,
         };
 
-        if thr_name != "" {
-            let thr_name = format!("{thr_name}\0");
-            let name = jni.new_string_utf(thr_name.as_ptr() as _).unwrap();
+        if thr_name != ptr::null() {
+            let name = jni.new_string_utf(thr_name).unwrap();
             if let Some(set_name_mid) =
                 jni.get_method_id(jthr_clz, c_str!("setName"), c_str!("(Ljava/lang/String;)V"))
             {
