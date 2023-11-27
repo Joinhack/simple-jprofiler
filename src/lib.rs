@@ -5,6 +5,7 @@ mod jvmti_native;
 mod r#macro;
 mod profiler;
 mod signal_prof;
+mod code_cache;
 mod vm;
 mod os;
 

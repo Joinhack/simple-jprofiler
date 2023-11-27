@@ -60,7 +60,6 @@ impl CircleQueue {
 
     #[inline(always)]
     unsafe fn dealloc_array<T>(ptr: *mut u8, size: usize) {
-        println!("dealloc");
         let size = mem::size_of::<T>().mul(size);
         let layout = Layout::from_size_align_unchecked(size, mem::align_of::<T>());
         alloc::dealloc(ptr, layout);
