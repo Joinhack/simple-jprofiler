@@ -1,9 +1,10 @@
 use std::{
+    mem,
     sync::atomic::{
         AtomicUsize, AtomicBool, Ordering
     }, 
     time::Duration, 
-    alloc::{self, Layout}
+    alloc::{self, Layout}, ops::Mul
 };
 
 use crate::vm::{JVMPICallTrace, JVMPICallFrame};
@@ -34,6 +35,15 @@ pub struct CircleQueue {
     frames: *mut [JVMPICallFrame; FRAME_SIZE],
 }
 
+impl Drop for CircleQueue {
+    fn drop(&mut self) {
+        unsafe{
+            Self::dealloc_array::<CallTraceHolder>(self.holders as _, HOLDER_SIZE);
+            Self::dealloc_array::<*mut [JVMPICallFrame; FRAME_SIZE]>(self.frames as _, HOLDER_SIZE);
+        }
+    }
+}
+
 impl CircleQueue {
     pub fn new() -> Self {
         let i_idx = AtomicUsize::new(0);
@@ -46,6 +56,14 @@ impl CircleQueue {
             holders,
             frames,
         }
+    }
+
+    #[inline(always)]
+    unsafe fn dealloc_array<T>(ptr: *mut u8, size: usize) {
+        println!("dealloc");
+        let size = mem::size_of::<T>().mul(size);
+        let layout = Layout::from_size_align_unchecked(size, mem::align_of::<T>());
+        alloc::dealloc(ptr, layout);
     }
 
     fn holders_initial() -> *mut CallTraceHolder {
