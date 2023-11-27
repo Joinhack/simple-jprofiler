@@ -38,12 +38,7 @@ impl CircleQueue {
     pub fn new() -> Self {
         let i_idx = AtomicUsize::new(0);
         let o_idx = AtomicUsize::new(0);
-        let holders: *mut CallTraceHolder = Self::array_ptr(HOLDER_SIZE);
-        (0..HOLDER_SIZE).for_each(|i| {
-            unsafe {
-                *holders.add(i) = CallTraceHolder::default();
-            }
-        });
+        let holders = Self::holders_initial();
         let frames = Self::frames_ptr();
         Self {
             i_idx,
@@ -51,6 +46,16 @@ impl CircleQueue {
             holders,
             frames,
         }
+    }
+
+    fn holders_initial() -> *mut CallTraceHolder {
+        let holders: *mut CallTraceHolder = Self::array_ptr(HOLDER_SIZE);
+        (0..HOLDER_SIZE).for_each(|i| {
+            unsafe {
+                *holders.add(i) = CallTraceHolder::default();
+            }
+        });
+        holders
     }
 
     fn frames_ptr() -> *mut [JVMPICallFrame; FRAME_SIZE] {
@@ -109,8 +114,8 @@ impl CircleQueue {
         let mut next_i_idx;
         let mut o_idx;
         loop {
-            i_idx = self.i_idx.load(Ordering::Relaxed);
-            o_idx = self.o_idx.load(Ordering::Relaxed);
+            i_idx = self.i_idx.load(Ordering::Acquire);
+            o_idx = self.o_idx.load(Ordering::Acquire);
             next_i_idx = Self::advice(i_idx);
             if o_idx == next_i_idx {
                 return false;
@@ -118,7 +123,7 @@ impl CircleQueue {
             if let Ok(_) = self.i_idx.compare_exchange_weak(
                 i_idx, 
                 next_i_idx, 
-                Ordering::Relaxed, 
+                Ordering::Release, 
                 Ordering::Relaxed
             ) {
                 break;
@@ -131,7 +136,7 @@ impl CircleQueue {
 
     pub fn pop(&mut self) -> bool {
         let o_idx = self.o_idx.load(Ordering::Relaxed);
-        let i_idx = self.i_idx.load(Ordering::Relaxed);
+        let i_idx = self.i_idx.load(Ordering::Acquire);
         if o_idx == i_idx {
             return false;
         }
@@ -139,7 +144,7 @@ impl CircleQueue {
             std::thread::sleep(Duration::from_micros(1));
         }
         self.holders(o_idx).is_commit.store(false, Ordering::Release);
-        self.o_idx.store(Self::advice(o_idx), Ordering::Relaxed);
+        self.o_idx.store(Self::advice(o_idx), Ordering::Release);
         true
     }
 }
