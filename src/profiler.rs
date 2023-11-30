@@ -1,26 +1,27 @@
 use std::ptr;
 use std::sync::atomic::Ordering;
-use std::{
-    sync::atomic::AtomicBool, time::Duration
-};
+use std::{sync::atomic::AtomicBool, time::Duration};
 
+use crate::code_cache::CodeCache;
 use crate::jvmti::{JNIEnv, JVMTI_THREAD_NORM_PRIORITY};
-use crate::{log_error, c_str};
 use crate::signal_prof::{SigactionFn, SignalProf};
+use crate::symbol_parser::SymbolParser;
 use crate::vm::JVMPICallTrace;
-use crate::{
-    get_vm_mut, log_info, VM, circle_queue::CircleQueue
-};
+use crate::{c_str, log_error};
+use crate::{circle_queue::CircleQueue, get_vm_mut, log_info, VM};
 
 const DEFAULT_MIN_SIGNAL: u32 = 10;
 const DEFAULT_MAX_SIGNAL: u32 = 100;
 
 const STATUS_CHECK_PERIOD: u32 = 100;
 
+pub const MAX_CODE_CACHE_ARRAY: u32 = 2048;
+
 pub struct Profiler {
     sigprof: SignalProf,
     running: AtomicBool,
     queue: CircleQueue,
+    code_caches: Vec<CodeCache>,
 }
 
 impl Profiler {
@@ -28,14 +29,16 @@ impl Profiler {
         let sigprof = SignalProf::new(DEFAULT_MIN_SIGNAL, DEFAULT_MAX_SIGNAL);
         let running = AtomicBool::new(false);
         let queue = CircleQueue::new();
-        Self { 
-            sigprof, 
+        Self {
+            queue,
+            sigprof,
             running,
-            queue
+            code_caches: Vec::new()
         }
     }
 
     pub fn start(&mut self, jni: JNIEnv) {
+        SymbolParser::instance().parse_libraries(&mut self.code_caches);
         let jthr = VM::new_java_thread(jni, c_str!("Agent Profiler Thread")).unwrap();
         let jvmti = get_vm_mut().jvmti();
         jvmti.run_agent_thread(
@@ -86,8 +89,7 @@ impl Profiler {
                 count = 0;
             }
             if !self.running.load(Ordering::Relaxed) {
-                while self.queue.pop() {
-                }
+                while self.queue.pop() {}
             }
             self.sleep_peroid(1);
         }

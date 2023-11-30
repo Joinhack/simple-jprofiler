@@ -1,14 +1,8 @@
 use crate::ctrl_svr::CtrlSvr;
-use crate::jvmti::{
-    JNIEnv, JNIEnvPtr, JavaVM, JvmtiEnv, JvmtiEnvPtr, JvmtiEventCallbacks
-};
-use crate::jvmti_native::{
-    jint, jmethodID, jthread, JVMTI_ENABLE, JVMTI_EVENT_VM_INIT
-};
+use crate::jvmti::{JNIEnv, JNIEnvPtr, JavaVM, JvmtiEnv, JvmtiEnvPtr, JvmtiEventCallbacks};
+use crate::jvmti_native::{jint, jmethodID, jthread, JVMTI_ENABLE, JVMTI_EVENT_VM_INIT};
 use crate::profiler::Profiler;
-use crate::{
-    c_str, check_null, get_vm_mut, jni_method, log_error, MaybeUninitTake
-};
+use crate::{c_str, check_null, get_vm_mut, jni_method, log_error, MaybeUninitTake};
 use std::mem::{self, MaybeUninit};
 use std::ptr;
 
@@ -27,9 +21,9 @@ pub struct JVMPICallFrame {
 
 impl Default for JVMPICallFrame {
     fn default() -> Self {
-        Self { 
-            lineno: 0, 
-            method_id: ptr::null_mut() 
+        Self {
+            lineno: 0,
+            method_id: ptr::null_mut(),
         }
     }
 }
@@ -47,10 +41,10 @@ pub struct JVMPICallTrace {
 
 impl Default for JVMPICallTrace {
     fn default() -> Self {
-        Self { 
-            env: ptr::null_mut(), 
-            num_frames: 0, 
-            frames: ptr::null_mut() 
+        Self {
+            env: ptr::null_mut(),
+            num_frames: 0,
+            frames: ptr::null_mut(),
         }
     }
 }
@@ -212,7 +206,7 @@ impl VM {
             Some(obj) => obj,
         };
 
-        if thr_name != ptr::null() {
+        if !thr_name.is_null() {
             let name = jni.new_string_utf(thr_name).unwrap();
             if let Some(set_name_mid) =
                 jni.get_method_id(jthr_clz, c_str!("setName"), c_str!("(Ljava/lang/String;)V"))

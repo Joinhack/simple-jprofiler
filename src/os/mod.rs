@@ -1,12 +1,11 @@
 #[cfg(target_os = "macos")]
-mod macos;
+mod os_macos;
 #[cfg(target_os = "macos")]
-use macos::*;
+use os_macos::*;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
 use linux::*;
-
 
 pub struct OS;
 
