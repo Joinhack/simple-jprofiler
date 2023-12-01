@@ -2,7 +2,7 @@
 mod symbol_macos;
 #[cfg(target_os="macos")]
 use symbol_macos::SymbolParserImpl;
-
+#[cfg(target_os="linux")]
 mod symbol_linux;
 
 use std::{sync::{Mutex, Once}, fmt::Display};
