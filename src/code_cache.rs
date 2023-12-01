@@ -110,6 +110,10 @@ impl CodeCache {
         }
     }
 
+    pub fn set_debug_symbols(&mut self, b: bool) {
+        self.debug_symbols = b;
+    }
+
     pub fn add(
         &mut self,
         start: *const i8,
@@ -139,7 +143,7 @@ impl CodeCache {
         }
     }
 
-    fn sort(&mut self) {
+    pub fn sort(&mut self) {
         if self.blobs.len() == 0 {
             return;
         }

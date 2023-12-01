@@ -27,6 +27,33 @@ struct section_64 { /* for 64-bit architectures */
 	reserved3: u32,	/* reserved */
 }
 
+#[repr(C)]
+#[allow(non_camel_case_types)]
+struct symtab_command {
+	cmd: u32,		/* LC_SYMTAB */
+	cmdsize:u32,	/* sizeof(struct symtab_command) */
+	symoff:u32,		/* symbol table offset */
+	nsyms:u32,		/* number of symbol table entries */
+	stroff:u32,		/* string table offset */
+	strsize:u32,	/* string table size in bytes */
+}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+pub struct nlist_64 {
+    pub n_un: C2RustUnnamed,
+    pub n_type: u8,
+    pub n_sect: u8,
+    pub n_desc: u16,
+    pub n_value: u64,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union C2RustUnnamed {
+    pub n_strx: u32,
+}
+
 const LC_SYMTAB: u32 = 0x2;
 
 const UNDEFINED: *const i8 = -1 as _;
@@ -66,6 +93,7 @@ impl<'a> MachHeader<'a> {
         return base64_ptr.offset(off) as *const T;
     }
 
+    #[inline(always)]
     unsafe fn is_64(&self) -> bool {
         self.image_base.magic == libc::MH_MAGIC_64
     }
@@ -76,6 +104,7 @@ struct MachObjectParser<'a, 'b> {
     image_base: MachHeader<'b>,
 }
 
+#[inline(always)]
 unsafe fn is_slice_eq(s:&[i8], c:&[u8]) -> bool {
     let sli: &[i8] = std::mem::transmute(c);
     sli == &s[0..sli.len()]
@@ -112,6 +141,31 @@ impl<'a, 'b> MachObjectParser<'a, 'b> {
         }
     }
 
+    unsafe fn load_symbol(
+        &mut self, 
+        symtab: *const symtab_command,
+        text_base: *const i8, 
+        link_base: *const i8
+    ) {
+        let symtab = &*symtab;
+        let mut sym: &nlist_64  = &*Self::offset(link_base, symtab.symoff as _);
+        let str_table = Self::offset::<i8>(link_base, symtab.stroff as _);
+        let mut debug_symbols = false;
+        for _ in 0..symtab.nsyms {
+            if sym.n_type & 0xee == 0x0e && sym.n_value != 0 {
+                let addr = text_base.add(sym.n_value as _);
+                let mut name = str_table.add(sym.n_un.n_strx as _);
+                if *name == b'_' as _ {
+                    name = name.add(1);
+                }
+                debug_symbols = true;
+                self.cc.add(addr, 0, name, false);
+            }
+            sym = &*((sym as *const nlist_64).add(1));
+        }
+        self.cc.set_debug_symbols(debug_symbols);
+    }
+
     unsafe fn parse(&mut self) -> bool {
         if !self.image_base.is_64() {
             return false
@@ -125,32 +179,35 @@ impl<'a, 'b> MachObjectParser<'a, 'b> {
             match lc.cmd {
                 libc::LC_SEGMENT_64 => {
                     let sc = Self::cast::<libc::segment_command_64, _>(lc);
-                    if sc.initprot & libc::PROT_EXEC == libc::PROT_EXEC {
+                    if (sc.initprot & 0x4) != 0 {
                         if text_base == UNDEFINED || is_slice_eq(&sc.segname, TEXT) {
                             let image_base = self.image_base.raw();
                             text_base = Self::offset::<i8>(image_base, -(sc.vmaddr as isize));
                             self.cc.set_text_base(text_base);
                             self.cc.update_bounds(image_base, Self::offset::<i8>(image_base, sc.vmaddr as _));
-                        } else if sc.initprot & libc::PROT_READ == libc::PROT_READ {
-                            if link_base == UNDEFINED && is_slice_eq(&sc.segname, LINKEDIT) {
-                                link_base = text_base.offset(sc.vmaddr as isize -  sc.fileoff as isize);
-                            }
-                        } else if sc.initprot & libc::PROT_WRITE == libc::PROT_WRITE {
-                            if is_slice_eq(&sc.segname, DATA) {
-                                self.find_global_offset_table(sc);
-                            }
+                        } 
+                    } else if (sc.initprot & 0x7) == 0x1 {
+                        if link_base == UNDEFINED && is_slice_eq(&sc.segname, LINKEDIT) {
+                            link_base = text_base.offset(sc.vmaddr as isize -  sc.fileoff as isize);
+                        }
+                    } else if sc.initprot & 0x2 != 0 {
+                        if is_slice_eq(&sc.segname, DATA) {
+                            self.find_global_offset_table(sc);
                         }
                     }
                 }
                 LC_SYMTAB => {
-
+                    if text_base == UNDEFINED || link_base == UNDEFINED {
+                        return false;
+                    }
+                    self.load_symbol(lc as *const _ as _, text_base, link_base);
+                    break;
                 }
                 _ => {}
             };
             lc = &*Self::offset(lc as *const _ as _, lc.cmdsize as _);
             
         }
-        
         true
     }
 }
@@ -166,7 +223,7 @@ impl SymbolParserImpl {
         }
     }
 
-    pub fn parse_libraries(&mut self, code_cache_array: &mut Vec<CodeCache>) {
+    pub fn parse_libraries(&mut self, code_caches: &mut Vec<CodeCache>) {
         unsafe {
             let count = libc::_dyld_image_count();
             for i in 0..count {
@@ -181,7 +238,7 @@ impl SymbolParserImpl {
                 if handle.is_null() {
                     continue;
                 }
-                let array_len = code_cache_array.len();
+                let array_len = code_caches.len();
                 if array_len >= MAX_CODE_CACHE_ARRAY as _ {
                     break;
                 }
@@ -191,6 +248,8 @@ impl SymbolParserImpl {
                 if !parser.parse() {
                     log_info!("WARNING: parse error {:?}", CStr::from_ptr(dll_name).to_str());
                 }
+                cc.sort();
+                code_caches.push(cc);
                 libc::dlclose(handle);
             }
         }
