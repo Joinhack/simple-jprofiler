@@ -160,6 +160,7 @@ impl<'a, 'b> MachObjectParser<'a, 'b> {
                     name = name.add(1);
                 }
                 debug_symbols = true;
+                
                 self.cc.add(addr, 0, name, false);
             }
             sym = &*((sym as *const nlist_64).add(1));
@@ -212,6 +213,16 @@ impl<'a, 'b> MachObjectParser<'a, 'b> {
     }
 }
 
+struct DlHandle {
+    pub(crate) handle: *mut libc::c_void,
+}
+
+impl Drop for DlHandle {
+    fn drop(&mut self) {
+        unsafe {libc::dlclose(self.handle)};
+    }
+}
+
 pub(crate)struct SymbolParserImpl {
     parsed: HashSet<*const i8>
 }
@@ -238,6 +249,7 @@ impl SymbolParserImpl {
                 if handle.is_null() {
                     continue;
                 }
+                let _hanlde = DlHandle {handle};
                 let array_len = code_caches.len();
                 if array_len >= MAX_CODE_CACHE_ARRAY as _ {
                     break;
@@ -250,7 +262,6 @@ impl SymbolParserImpl {
                 }
                 cc.sort();
                 code_caches.push(cc);
-                libc::dlclose(handle);
             }
         }
     }
