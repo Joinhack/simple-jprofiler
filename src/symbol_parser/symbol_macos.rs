@@ -58,9 +58,10 @@ const LC_SYMTAB: u32 = 0x2;
 
 const UNDEFINED: *const i8 = -1 as _;
 
-const TEXT: &[u8] = b"__TEXT";
-const LINKEDIT: &[u8] = b"__LINKEDIT";
-const DATA: &[u8] = b"__DATA";
+const SEG_TEXT: &[u8] = b"__TEXT";
+const SEG_LINKEDIT: &[u8] = b"__LINKEDIT";
+const SEG_DATA: &[u8] = b"__DATA";
+const SEC_SYMBOL_PTR: &[u8] = b"__la_symbol_ptr";
 
 #[repr(C)]
 union MachHeader<'a> {
@@ -132,7 +133,7 @@ impl<'a, 'b> MachObjectParser<'a, 'b> {
         let sc_size = mem::size_of::<libc::segment_command_64>() as _;
         let mut section: &section_64 =  &*Self::offset(sc as *const _ as _, sc_size);
         for _ in 0..sc.nsects {
-            if is_slice_eq(&section.sectname, b"__la_symbol_ptr") {
+            if is_slice_eq(&section.sectname, SEC_SYMBOL_PTR) {
                 let got_start = Self::offset::<i8>(self.image_base.raw(), section.addr as _);
                 self.cc.set_global_offset_table(got_start as _, got_start.add(section.size as _) as _, true);
                 break;
@@ -174,24 +175,23 @@ impl<'a, 'b> MachObjectParser<'a, 'b> {
         let mut lc: &libc::load_command = &*self.image_base.raw_base64_offset(1);
         let mut text_base = UNDEFINED;
         let mut link_base = UNDEFINED;
-        
         for _ in 0..header.ncmds {
             match lc.cmd {
                 libc::LC_SEGMENT_64 => {
                     let sc = Self::cast::<libc::segment_command_64, _>(lc);
                     if (sc.initprot & 0x4) != 0 {
-                        if text_base == UNDEFINED || is_slice_eq(&sc.segname, TEXT) {
+                        if text_base == UNDEFINED || is_slice_eq(&sc.segname, SEG_TEXT) {
                             let image_base = self.image_base.raw();
                             text_base = Self::offset::<i8>(image_base, -(sc.vmaddr as isize));
                             self.cc.set_text_base(text_base);
                             self.cc.update_bounds(image_base, Self::offset::<i8>(image_base, sc.vmaddr as _));
                         } 
                     } else if (sc.initprot & 0x7) == 0x1 {
-                        if link_base == UNDEFINED && is_slice_eq(&sc.segname, LINKEDIT) {
+                        if link_base == UNDEFINED && is_slice_eq(&sc.segname, SEG_LINKEDIT) {
                             link_base = text_base.offset(sc.vmaddr as isize -  sc.fileoff as isize);
                         }
                     } else if sc.initprot & 0x2 != 0 {
-                        if is_slice_eq(&sc.segname, DATA) {
+                        if is_slice_eq(&sc.segname, SEG_DATA) {
                             self.find_global_offset_table(sc);
                         }
                     }
