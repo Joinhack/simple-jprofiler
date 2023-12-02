@@ -4,8 +4,10 @@ mod symbol_macos;
 use symbol_macos::SymbolParserImpl;
 #[cfg(target_os="linux")]
 mod symbol_linux;
+#[cfg(target_os="linux")]
+use symbol_macos::SymbolParserImpl;
 
-use std::{sync::{Mutex, Once}, fmt::Display};
+use std::sync::{Mutex, Once};
 
 use crate::code_cache::CodeCache;
 

@@ -5,9 +5,40 @@ use std::{
     collections::HashSet
 };
 
-use crate::{code_cache::CodeCache, profiler::MAX_CODE_CACHE_ARRAY};
+use crate::{
+    code_cache::CodeCache, 
+    profiler::MAX_CODE_CACHE_ARRAY
+};
 
+#[cfg(target_pointer_width = "64")]
+mod target_64 {
+    const ELFCLASS_SUPPORTED: u8 = libc::ELFCLASS64;
+    type ElfHeader = libc::Elf64_Ehdr;
+    type ElfSection = libc::Elf64_Shdr;
+    type ElfProgramHeader = libc::Elf64_Phdr;
+    type ElfNote = libc::Elf64_Nhdr;
+    type ElfSymbol = libc::Elf64_Sym;
+    type ElfRelocation = libc::Elf64_Rel;
+    type ElfDyn = libc::Elf64_Dyn;
+}
 
+#[cfg(target_pointer_width = "64")]
+use target_64::*;
+
+#[cfg(target_pointer_width = "32")]
+mod target_32 {
+    const ELFCLASS_SUPPORTED: u8 = libc::ELFCLASS32;
+    type ElfHeader = libc::Elf32_Ehdr;
+    type ElfSection = libc::Elf32_Shdr;
+    type ElfProgramHeader = libc::Elf32_Phdr;
+    type ElfNote = libc::Elf32_Nhdr;
+    type ElfSymbol = libc::Elf32_Sym;
+    type ElfRelocation = libc::Elf32_Rel;
+    type ElfDyn = libc::Elf32_Dyn;
+}
+
+#[cfg(target_pointer_width = "32")]
+use target_32::*;
 
 struct MemoryMapDesc<'a> {
     addr: &'a [u8],
@@ -30,7 +61,6 @@ macro_rules! split {
 
 impl<'a> MemoryMapDesc<'a> {
     fn parse(line: &'a [u8]) -> Self {
-        
         let split = line;
         let (addr, split) = split!(split, b'-');
         let (end, split) = split!(split, b' ');
@@ -100,14 +130,6 @@ impl<'a> MemoryMapDesc<'a> {
     }
 }
 
-struct ElfParser {
-
-}
-
-impl ElfParser {
-    
-}
-
 pub(crate)struct SymbolParserImpl {
     parsed_library: HashSet<u64>,
     parsed_inode: HashSet<u64>,
@@ -168,7 +190,7 @@ impl SymbolParserImpl {
                     if self.parsed_inode.insert(desc.dev() << 32 | inode) {
                         image_base = unsafe {image_base.offset(- (desc.offs() as isize))};
                         if image_base >= last_readable_base {
-                            todo!()
+                            // ElfParser::parse_program_headers()
                         }
                         todo!()
                     }
@@ -180,6 +202,30 @@ impl SymbolParserImpl {
         }
     }
 
+}
+
+struct ElfParser<'a> {
+    cc: &'a mut CodeCache,
+    base: *const i8,
+
+    file_name: &'a [u8],
+    sections: *const i8,
+    vaddr_diff: *const i8,
+}
+
+impl<'a> ElfParser<'a> {
+
+    fn new(cc: &mut CodeCache, base: *const i8, addr :*const i8, file_name: &[u8]) -> Self {
+        Self {
+            cc,
+            base,
+            file_name,
+        }
+    }
+
+    fn parse_program_headers(cc: &mut CodeCache, base: *const i8, end :*const i8) {
+        
+    }
 }
 
 mod test {
