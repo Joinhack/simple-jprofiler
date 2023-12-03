@@ -10,16 +10,81 @@ use crate::{
     profiler::MAX_CODE_CACHE_ARRAY
 };
 
+const SHN_UNDEF: u8  = 0;
+
+const DT_NULL: i64 =     0;
+const DT_NEEDED: i64 =   1;
+const DT_PLTRELSZ: i64 = 2;
+const DT_PLTGOT: i64 =   3;
+const DT_HASH: i64 =     4;
+const DT_STRTAB: i64 =   5;
+const DT_SYMTAB: i64 =   6;
+const DT_RELA: i64 =     7;
+const DT_RELASZ: i64 =   8;
+const DT_RELAENT: i64 =  9;
+const DT_STRSZ: i64 =    10;
+const DT_SYMENT: i64 =   11;
+const DT_INIT: i64 =     12;
+const DT_FINI: i64 =     13;
+const DT_SONAME: i64 =   14;
+const DT_RPATH: i64 =    15;
+const DT_SYMBOLIC: i64 = 16;
+const DT_REL: i64 =      17;
+const DT_RELSZ: i64 =    18;
+const DT_RELENT: i64 =   19;
+const DT_PLTREL: i64 =   20;
+const DT_DEBUG: i64 =    21;
+const DT_TEXTREL: i64 =  22;
+const DT_JMPREL: i64 =   23;
+const DT_RELACOUNT: i64 =  0x6ffffff9;
+const DT_RELCOUNT: i64 =  0x6ffffffa;
+
 #[cfg(target_pointer_width = "64")]
 mod target_64 {
-    const ELFCLASS_SUPPORTED: u8 = libc::ELFCLASS64;
-    type ElfHeader = libc::Elf64_Ehdr;
-    type ElfSection = libc::Elf64_Shdr;
-    type ElfProgramHeader = libc::Elf64_Phdr;
-    type ElfNote = libc::Elf64_Nhdr;
-    type ElfSymbol = libc::Elf64_Sym;
-    type ElfRelocation = libc::Elf64_Rel;
-    type ElfDyn = libc::Elf64_Dyn;
+    pub const R_GLOB_DAT: u64 = 6;
+
+    pub const ELF_R_TYPE_MASK: u64 = 0xffffffff;
+  
+    #[derive(Clone, Copy)]
+    #[repr(C)]
+    #[allow(non_camel_case_types)]
+    pub struct Elf64_Nhdr {
+        pub n_namesz: libc::Elf64_Word,
+        pub n_descsz: libc::Elf64_Word,
+        pub n_type: libc::Elf64_Word,
+    }
+
+    #[derive(Clone, Copy)]
+    #[repr(C)]
+    #[allow(non_camel_case_types)]
+    pub struct Elf64_Rel {
+        pub r_offset: libc::Elf64_Addr,
+        pub r_info: libc::Elf64_Xword,
+    }
+
+    #[derive(Clone, Copy)]
+    #[repr(C)]
+    pub union UnnamedDyn64 {
+        pub d_val: libc::Elf64_Xword,
+        pub d_ptr: libc::Elf64_Addr,
+    }
+    
+    #[derive(Clone, Copy)]
+    #[repr(C)]
+    #[allow(non_camel_case_types)]
+    pub struct Elf64_Dyn {
+        pub d_un: UnnamedDyn64,
+        pub d_tag: libc::Elf64_Sxword,
+    }
+
+    pub const ELFCLASS_SUPPORTED: u8 = libc::ELFCLASS64;
+    pub type ElfHeader = libc::Elf64_Ehdr;
+    pub type ElfSection = libc::Elf64_Shdr;
+    pub type ElfProgramHeader = libc::Elf64_Phdr;
+    pub type ElfNote = Elf64_Nhdr;
+    pub type ElfSymbol = libc::Elf64_Sym;
+    pub type ElfRelocation = Elf64_Rel;
+    pub type ElfDyn = Elf64_Dyn;
 }
 
 #[cfg(target_pointer_width = "64")]
@@ -27,14 +92,51 @@ use target_64::*;
 
 #[cfg(target_pointer_width = "32")]
 mod target_32 {
-    const ELFCLASS_SUPPORTED: u8 = libc::ELFCLASS32;
-    type ElfHeader = libc::Elf32_Ehdr;
-    type ElfSection = libc::Elf32_Shdr;
-    type ElfProgramHeader = libc::Elf32_Phdr;
-    type ElfNote = libc::Elf32_Nhdr;
-    type ElfSymbol = libc::Elf32_Sym;
-    type ElfRelocation = libc::Elf32_Rel;
-    type ElfDyn = libc::Elf32_Dyn;
+    pub const ELF_R_TYPE_MASK: u64 = 0xff;
+
+    pub const R_GLOB_DAT: u64 = 6;
+    type Elf32_Sword = u32;
+
+    #[derive(Clone, Copy)]
+    #[repr(C)]
+    #[allow(non_camel_case_types)]
+    pub struct Elf32_Nhdr {
+        pub n_namesz: libc::Elf32_Word,
+        pub n_descsz: libc::Elf32_Word,
+        pub n_type: libc::Elf32_Word,
+    }
+
+    #[derive(Clone, Copy)]
+    #[repr(C)]
+    #[allow(non_camel_case_types)]
+    pub struct Elf32_Rel {
+        pub r_offset: libc::Elf32_Addr,
+        pub r_info: libc::Elf32_Word,
+    }
+
+    #[derive(Clone, Copy)]
+    #[repr(C)]
+    pub union UnnamedDyn32 {
+        pub d_val: Elf32_Sword,
+        pub d_ptr: libc::Elf32_Addr,
+    }
+    
+    #[derive(Clone, Copy)]
+    #[repr(C)]
+    #[allow(non_camel_case_types)]
+    pub struct Elf32_Dyn {
+        d_un: UnnamedDyn,
+        d_tag: Elf32_Sword,
+    }
+
+    pub const ELFCLASS_SUPPORTED: u8 = libc::ELFCLASS32;
+    pub type ElfHeader = libc::Elf32_Ehdr;
+    pub type ElfSection = libc::Elf32_Shdr;
+    pub type ElfProgramHeader = libc::Elf32_Phdr;
+    pub type ElfNote = Elf32_Nhdr;
+    pub type ElfSymbol = libc::Elf32_Sym;
+    pub type ElfRelocation = Elf32_Rel;
+    pub type ElfDyn = libc::Elf32_Dyn;
 }
 
 #[cfg(target_pointer_width = "32")]
@@ -204,27 +306,145 @@ impl SymbolParserImpl {
 
 }
 
-struct ElfParser<'a> {
+struct ElfParser<'a, 'b> {
     cc: &'a mut CodeCache,
     base: *const i8,
-
-    file_name: &'a [u8],
+    header: *const ElfHeader,
+    file_name: &'b [u8],
     sections: *const i8,
     vaddr_diff: *const i8,
 }
 
-impl<'a> ElfParser<'a> {
+impl<'a, 'b> ElfParser<'a, 'b> {
 
-    fn new(cc: &mut CodeCache, base: *const i8, addr :*const i8, file_name: &[u8]) -> Self {
-        Self {
-            cc,
-            base,
-            file_name,
+    fn new(cc: &'a mut CodeCache, base: *const i8, addr :*const i8, file_name: &'b [u8]) -> Self {
+        unsafe {
+            let header = addr as *const ElfHeader ;
+            let sections = addr.add((*header).e_shoff as _);
+            let vaddr_diff = ptr::null();
+            Self {
+                cc,
+                base,
+                header,
+                sections,
+                file_name,
+                vaddr_diff,
+            }
         }
     }
 
-    fn parse_program_headers(cc: &mut CodeCache, base: *const i8, end :*const i8) {
-        
+    #[inline(always)]
+    unsafe fn valid_header(&self) -> bool {
+        let elf_header = &*self.header;
+        let ident = &elf_header.e_ident[..];
+        ident[0] == 0x7f && ident[1] == b'E' && ident[2] == b'L' && ident[3] == b'F' &&
+        ident[4] == ELFCLASS_SUPPORTED && ident[5] == libc::ELFDATA2LSB &&
+        ident[6] == libc::EV_CURRENT as _ && elf_header.e_shstrndx != SHN_UNDEF as _
+    }
+
+    #[inline(always)]
+    fn set_text_base(&mut self, base: *const i8) {
+        self.cc.set_text_base(base);
+    }
+
+    #[inline(always)]
+    unsafe fn at(&self, sec: *const ElfSection) ->  *const i8 {
+        (self.header as *const i8).offset((*sec).sh_offset as _)
+    }
+
+    unsafe fn parse_program_headers(cc: &'a mut CodeCache, base: *const i8, end :*const i8) {
+        let mut elf_parser = ElfParser::new(cc, base, base, &[]);
+        if elf_parser.valid_header() && base.offset((*elf_parser.header).e_phoff as _) < end  {
+            elf_parser.set_text_base(base);
+            elf_parser.valid_header();
+            elf_parser.parse_dynamic_section();
+            
+        }
+    }
+
+    unsafe fn parse_dynamic_section(&mut self) {
+        macro_rules! dyn_ptr {
+            ($p: expr) => {
+                self.base.add($p as _)
+            };
+        }
+        let dynamic = self.find_program_header(libc::PT_DYNAMIC);
+        if dynamic.is_null() {
+            return;
+        }
+        let mut got_start: *const *const ()  = ptr::null();
+        let mut pltrelsz: isize = 0;
+        let mut relsz: isize = 0;
+        let mut relent: isize = 0;
+        let mut relcount: isize = 0;
+        let mut rel: *const i8 = ptr::null();
+        let dyn_start = self.at(dynamic as _);
+        let dyn_end = dyn_start.add((*dynamic).p_memsz as _);
+        let mut dy = dyn_start as *const ElfDyn;
+        while dy < dyn_end as * const _ {
+            match (*dy).d_tag  {
+                DT_PLTGOT => got_start = (dyn_ptr!((*dy).d_un.d_ptr) as *const *const ()).add(3),
+                DT_PLTRELSZ => pltrelsz = (*dy).d_un.d_val as _,
+                DT_RELA|DT_REL => rel = dyn_ptr!((*dy).d_un.d_ptr) as _,
+                DT_RELASZ|DT_RELSZ => relsz = (*dy).d_un.d_val as _,
+                DT_RELAENT|DT_RELENT => relent = (*dy).d_un.d_val as _,
+                DT_RELACOUNT|DT_RELCOUNT => relcount = (*dy).d_un.d_val as _,
+                _ => {},
+            };
+            dy = dy.add(1);
+        }
+
+        if relent != 0 {
+            if pltrelsz != 0 && got_start.is_null() {
+                self.cc.set_global_offset_table(got_start as _, got_start.add((pltrelsz / relent) as _) as _, false);
+            } else if rel.is_null() && relsz != 0 {
+                let mut min_addr: *const *const () = -1 as _;
+                let mut max_addr: *const *const () = 0 as _;
+                let mut offs = relcount * relent;
+                while offs < relsz {
+                    let r = rel.add(offs as _) as *const ElfRelocation;
+                    if ((*r).r_info&ELF_R_TYPE_MASK) == R_GLOB_DAT {
+                        let addr = self.base.add((*r).r_offset as _) as _;
+                        if addr < min_addr {
+                            min_addr = addr;
+                        }
+                        if addr > max_addr {
+                            max_addr = addr;
+                        }
+                    }
+                    offs += relent;
+                }
+
+                if got_start.is_null() {
+                    got_start = min_addr;
+                }
+                if max_addr >= got_start {
+                    self.cc.set_global_offset_table(got_start as _, max_addr.add(1) as _, false);
+                }
+            }
+        }
+    }
+
+    unsafe fn find_program_header(&self, typ: u32) -> *const ElfProgramHeader {
+        let pheaders = (self.header as *const i8).offset((*self.header).e_phoff as _);
+        for i in 0..(*self.header).e_phnum as isize {
+            let pheader = &*(pheaders.offset(i*((*self.header).e_phentsize as isize)) as *const ElfProgramHeader);
+            if pheader.p_type == typ {
+                return pheader;
+            }
+        }
+        return ptr::null();
+    }
+
+    unsafe fn calc_virtual_local_address(&mut self) {
+        let pheaders = (self.header as *const i8).offset((*self.header).e_phoff as _);
+        for i in 0..(*self.header).e_phnum as isize {
+            let pheader = &*(pheaders.offset(i*((*self.header).e_phentsize as isize)) as *const ElfProgramHeader);
+            if pheader.p_type == libc::PT_LOAD {
+                self.vaddr_diff = self.base.offset(- (pheader.p_vaddr as isize));
+            }
+        }
+        self.vaddr_diff = self.base;
     }
 }
 

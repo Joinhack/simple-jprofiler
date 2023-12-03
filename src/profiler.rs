@@ -88,8 +88,9 @@ impl Profiler {
                 }
                 count = 0;
             }
-            if !self.running.load(Ordering::Relaxed) {
+            if !self.running.load(Ordering::Acquire) {
                 while self.queue.pop() {}
+                break;
             }
             self.sleep_peroid(1);
         }

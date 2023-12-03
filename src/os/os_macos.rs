@@ -5,11 +5,11 @@ extern "C" {
 }
 
 impl OSImpl {
-    pub fn thread_id() -> u32 {
+    pub fn thread_id() -> u64 {
         unsafe {
             let port = libc::mach_thread_self();
             mach_port_deallocate(libc::mach_task_self(), port);
-            port
+            port as _
         }
     }
 }

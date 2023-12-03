@@ -5,7 +5,7 @@ use symbol_macos::SymbolParserImpl;
 #[cfg(target_os="linux")]
 mod symbol_linux;
 #[cfg(target_os="linux")]
-use symbol_macos::SymbolParserImpl;
+use symbol_linux::SymbolParserImpl;
 
 use std::sync::{Mutex, Once};
 
