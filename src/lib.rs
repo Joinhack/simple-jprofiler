@@ -8,6 +8,7 @@ mod os;
 mod profiler;
 mod signal_prof;
 mod vm;
+mod dwarf;
 mod symbol_parser;
 
 use jvmti::{JavaVMPtr, JvmtiEnvPtr};

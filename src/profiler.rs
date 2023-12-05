@@ -88,7 +88,7 @@ impl Profiler {
                 }
                 count = 0;
             }
-            if !self.running.load(Ordering::Acquire) {
+            if !self.running.load(Ordering::Relaxed) {
                 while self.queue.pop() {}
                 break;
             }

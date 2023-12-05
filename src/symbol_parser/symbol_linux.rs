@@ -11,6 +11,7 @@ use crate::{
 };
 
 const SHN_UNDEF: u8  = 0;
+const ET_EXEC: u16  =   2;
 
 const DT_NULL: i64 =     0;
 const DT_NEEDED: i64 =   1;
@@ -348,15 +349,24 @@ impl<'a, 'b> ElfParser<'a, 'b> {
     }
 
     #[inline(always)]
-    unsafe fn at(&self, sec: *const ElfSection) ->  *const i8 {
+    unsafe fn at_sectionhdr(&self, sec: *const ElfSection) ->  *const i8 {
         (self.header as *const i8).offset((*sec).sh_offset as _)
+    }
+
+    #[inline(always)]
+    unsafe fn at_programhdr(&self, pheader: *const ElfProgramHeader) ->  *const i8 {
+        if (*self.header).e_type == ET_EXEC {
+            (*pheader).p_paddr as _
+        } else {
+            self.vaddr_diff.add((*pheader).p_paddr as _)
+        }
     }
 
     unsafe fn parse_program_headers(cc: &'a mut CodeCache, base: *const i8, end :*const i8) {
         let mut elf_parser = ElfParser::new(cc, base, base, &[]);
         if elf_parser.valid_header() && base.offset((*elf_parser.header).e_phoff as _) < end  {
             elf_parser.set_text_base(base);
-            elf_parser.valid_header();
+            elf_parser.calc_virtual_local_address();
             elf_parser.parse_dynamic_section();
             
         }
@@ -378,7 +388,7 @@ impl<'a, 'b> ElfParser<'a, 'b> {
         let mut relent: isize = 0;
         let mut relcount: isize = 0;
         let mut rel: *const i8 = ptr::null();
-        let dyn_start = self.at(dynamic as _);
+        let dyn_start = self.at_programhdr(dynamic);
         let dyn_end = dyn_start.add((*dynamic).p_memsz as _);
         let mut dy = dyn_start as *const ElfDyn;
         while dy < dyn_end as * const _ {
