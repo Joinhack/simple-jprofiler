@@ -13,6 +13,13 @@ macro_rules! log_error {
 }
 
 #[macro_export]
+macro_rules! log_warn {
+    ($($expr: tt)*) => {
+        println!($($expr)*)
+    }
+}
+
+#[macro_export]
 macro_rules! c_str {
     ($s: expr) => {
         concat!($s, "\0").as_ptr() as *const std::ffi::c_char
