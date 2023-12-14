@@ -9,6 +9,7 @@ mod profiler;
 mod signal_prof;
 mod vm;
 mod dwarf;
+mod vm_struct;
 mod symbol_parser;
 
 use jvmti::{JavaVMPtr, JvmtiEnvPtr};

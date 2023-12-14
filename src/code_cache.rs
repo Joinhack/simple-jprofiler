@@ -37,6 +37,14 @@ impl NativeFunc {
     }
 
     #[inline(always)]
+    pub fn name_str(&self) -> &str {
+        unsafe {
+            std::str::from_utf8_unchecked(&self.name)    
+        }
+    }
+
+
+    #[inline(always)]
     pub fn name_mut(&mut self) -> &mut [u8] {
         &mut self.name
     }
@@ -74,8 +82,8 @@ impl CodeBlob {
 pub struct CodeCache {
     name: NativeFunc,
     lib_index: u16,
-    min_address: *const i8,
-    max_address: *const i8,
+    pub(crate)min_address: *const i8,
+    pub(crate)max_address: *const i8,
     text_base: *const i8,
     got_start: *const *const i8,
     got_end: *const *const i8,
@@ -87,6 +95,12 @@ pub struct CodeCache {
 impl CodeCache {
     pub fn new(name: *const i8, lib_index: u16) -> Self {
         Self::new_with_address_range(name, lib_index, NO_MIN_ADDRESS, NO_MAX_ADDRESS)
+    }
+
+    pub fn find_symbol(&self, name: &[u8]) -> Option<*const i8> {
+        self.blobs.iter().find(|blob| {
+            blob.name.name() == name 
+        }).map(|blob| blob.start)
     }
 
     pub fn new_with_address_range(
@@ -134,9 +148,14 @@ impl CodeCache {
         }
     }
 
+    #[inline(always)]
+    pub fn name_str(&self) -> &str {
+        self.name.name_str()
+    }
+
     pub fn update_bounds(&mut self, start: *const i8, end: *const i8) {
-        if start < self.min_address {
-            self.max_address = start;
+        if start  < self.min_address {
+            self.min_address = start;
         }
         if end > self.max_address {
             self.max_address = end;
@@ -161,24 +180,15 @@ impl CodeCache {
         self.text_base = text_base;
     }
 
-    pub fn find_symbol(&self, name: &str) -> *const i8 {
-        let name_sli = name.as_bytes();
-        for blob in self.blobs.iter() {
-            if blob.name.name() == name_sli {
-                return blob.start;
-            }
-        }
-        return ptr::null();
+    pub fn find_symbol_prefix(&self, name: &[u8]) -> Option<*const i8> {
+        self.blobs.iter()
+            .find(|blob| blob.name.name().starts_with(name))
+            .map(|blob| blob.start)
     }
 
-    pub fn find_symbol_prefix(&self, name: &str) -> *const i8 {
-        let name_sli = name.as_bytes();
-        for blob in self.blobs.iter() {
-            if blob.name.name().starts_with(name_sli) {
-                return blob.start;
-            }
-        }
-        return ptr::null();
+    #[inline(always)]
+    pub fn contains(&self, addr: *const i8 ) -> bool {
+        addr >= self.min_address  && addr < self.max_address
     }
 
     pub fn set_global_offset_table(&mut self, start: *const *const i8, end: *const *const i8, patchable: bool) {

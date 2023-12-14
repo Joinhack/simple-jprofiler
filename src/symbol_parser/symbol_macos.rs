@@ -63,56 +63,24 @@ const SEG_LINKEDIT: &[u8] = b"__LINKEDIT";
 const SEG_DATA: &[u8] = b"__DATA";
 const SEC_SYMBOL_PTR: &[u8] = b"__la_symbol_ptr";
 
-#[repr(C)]
-union MachHeader<'a> {
-    image_base: &'a libc::mach_header,
-    image_base64: &'a libc::mach_header_64,
-}
-
-impl<'a> MachHeader<'a> {
-    fn new(image_base: *const libc::mach_header) -> Self {
-        Self {
-            image_base: unsafe {
-                &(*image_base)
-            }
-        }
-    }
-
-    #[inline(always)]
-    unsafe fn raw(&self) -> *const i8 {
-        self.image_base64 as *const _ as _
-    }
-
-    #[inline(always)]
-    unsafe fn image_base64(&self) -> &libc::mach_header_64 {
-        self.image_base64
-    }
-
-    #[inline(always)]
-    unsafe fn raw_base64_offset<T>(&self, off: isize) -> *const T {
-        let base64_ptr = self.image_base64 as *const libc::mach_header_64;
-        return base64_ptr.offset(off) as *const T;
-    }
-
-    #[inline(always)]
-    unsafe fn is_64(&self) -> bool {
-        self.image_base.magic == libc::MH_MAGIC_64
-    }
-}
-
-struct MachObjectParser<'a, 'b> {
+struct MachObjectParser<'a> {
     cc: &'a mut CodeCache,
-    image_base: MachHeader<'b>,
+    image_base: *const libc::mach_header,
 }
 
 #[inline(always)]
-unsafe fn is_slice_eq(s:&[i8], c:&[u8]) -> bool {
-    let sli: &[i8] = std::mem::transmute(c);
-    sli == &s[0..sli.len()]
+fn is_partial_eq(s:&[i8], c:&[u8]) -> bool {
+    let len = s.len().min(c.len());
+    for i in 0..len {
+        if s[i] != c[i] as _ {
+            return false;
+        }
+    }
+    true
 }
 
-impl<'a, 'b> MachObjectParser<'a, 'b> {
-    fn new(cc: &'a mut CodeCache, image_base: MachHeader<'b>) -> Self {
+impl<'a> MachObjectParser<'a> {
+    fn new(cc: &'a mut CodeCache, image_base: *const libc::mach_header) -> Self {
         Self {
             cc,
             image_base
@@ -124,17 +92,12 @@ impl<'a, 'b> MachObjectParser<'a, 'b> {
         p.offset(size) as *const T
     }
 
-    #[inline(always)]
-    unsafe fn cast<T, U>(f: &U) -> &T {
-        &*(f as *const U as *const T)
-    }
-
-    unsafe fn find_global_offset_table(&mut self, sc: &libc::segment_command_64) {
+    unsafe fn find_global_offset_table(&mut self, sc: *const libc::segment_command_64) {
         let sc_size = mem::size_of::<libc::segment_command_64>() as _;
         let mut section: &section_64 =  &*Self::offset(sc as *const _ as _, sc_size);
-        for _ in 0..sc.nsects {
-            if is_slice_eq(&section.sectname, SEC_SYMBOL_PTR) {
-                let got_start = Self::offset::<i8>(self.image_base.raw(), section.addr as _);
+        for _ in 0..(*sc).nsects {
+            if is_partial_eq(&section.sectname, SEC_SYMBOL_PTR) {
+                let got_start = Self::offset::<i8>(self.image_base as _, section.addr as _);
                 self.cc.set_global_offset_table(got_start as _, got_start.add(section.size as _) as _, true);
                 break;
             }
@@ -169,30 +132,30 @@ impl<'a, 'b> MachObjectParser<'a, 'b> {
     }
 
     unsafe fn parse(&mut self) -> bool {
-        if !self.image_base.is_64() {
+        if (*self.image_base).magic != libc::MH_MAGIC_64 {
             return false
         }
-        let header = self.image_base.image_base64();
-        let mut lc: &libc::load_command = &*self.image_base.raw_base64_offset(1);
+        let header = self.image_base as *const libc::mach_header_64;
+        let mut lc: *const libc::load_command = header.add(1) as _;
         let mut text_base = UNDEFINED;
         let mut link_base = UNDEFINED;
-        for _ in 0..header.ncmds {
-            match lc.cmd {
+        for _ in 0..(*header).ncmds {
+            match (*lc).cmd {
                 libc::LC_SEGMENT_64 => {
-                    let sc = Self::cast::<libc::segment_command_64, _>(lc);
-                    if (sc.initprot & 0x4) != 0 {
-                        if text_base == UNDEFINED || is_slice_eq(&sc.segname, SEG_TEXT) {
-                            let image_base = self.image_base.raw();
-                            text_base = Self::offset::<i8>(image_base, -(sc.vmaddr as isize));
+                    let sc = lc as *const libc::segment_command_64;
+                    if ((*sc).initprot & 0x4) != 0 {
+                        if text_base == UNDEFINED || is_partial_eq(&(*sc).segname, SEG_TEXT) {
+                            let image_base = self.image_base;
+                            text_base = Self::offset::<i8>(image_base as _, -((*sc).vmaddr as isize));
                             self.cc.set_text_base(text_base);
-                            self.cc.update_bounds(image_base, Self::offset::<i8>(image_base, sc.vmaddr as _));
-                        } 
-                    } else if (sc.initprot & 0x7) == 0x1 {
-                        if link_base == UNDEFINED && is_slice_eq(&sc.segname, SEG_LINKEDIT) {
-                            link_base = text_base.offset(sc.vmaddr as isize -  sc.fileoff as isize);
+                            self.cc.update_bounds(image_base as _, Self::offset::<i8>(image_base as _, (*sc).vmsize as _));
                         }
-                    } else if sc.initprot & 0x2 != 0 {
-                        if is_slice_eq(&sc.segname, SEG_DATA) {
+                    } else if ((*sc).initprot & 0x7) == 0x1 {
+                        if link_base == UNDEFINED && is_partial_eq(&(*sc).segname, SEG_LINKEDIT) {
+                            link_base = text_base.offset((*sc).vmaddr as isize -  (*sc).fileoff as isize);
+                        }
+                    } else if (*sc).initprot & 0x2 != 0 {
+                        if is_partial_eq(&(*sc).segname, SEG_DATA) {
                             self.find_global_offset_table(sc);
                         }
                     }
@@ -206,7 +169,7 @@ impl<'a, 'b> MachObjectParser<'a, 'b> {
                 }
                 _ => {}
             };
-            lc = &*Self::offset(lc as *const _ as _, lc.cmdsize as _);
+            lc = &*Self::offset(lc as *const _ as _, (*lc).cmdsize as _);
             
         }
         true
@@ -245,6 +208,7 @@ impl SymbolParserImpl {
                 }
 
                 let dll_name = libc::_dyld_get_image_name(i);
+                
                 let handle = libc::dlopen(dll_name, libc::RTLD_LAZY|libc::RTLD_NOLOAD);
                 if handle.is_null() {
                     continue;
@@ -255,8 +219,8 @@ impl SymbolParserImpl {
                     break;
                 }
                 let mut cc = CodeCache::new(dll_name, array_len as _);
-                let mach_header = MachHeader::new(image_base);
-                let mut parser = MachObjectParser::new(&mut cc, mach_header);
+                
+                let mut parser = MachObjectParser::new(&mut cc, image_base);
                 if !parser.parse() {
                     log_info!("WARNING: parse error {:?}", CStr::from_ptr(dll_name).to_str());
                 }

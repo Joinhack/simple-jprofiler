@@ -8,6 +8,10 @@ edition = "2021"
 [dependencies]
 libc = "0.2.150"
 
+
 [lib]
 crate-type = ["cdylib"]
 name="sjprofiler"
+
+[build-dependencies]
+cc = "1.0.83"
