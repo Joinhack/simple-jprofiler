@@ -1,16 +1,16 @@
 mod circle_queue;
 mod code_cache;
 mod ctrl_svr;
+mod dwarf;
 mod jvmti;
 mod jvmti_native;
 mod r#macro;
 mod os;
 mod profiler;
 mod signal_prof;
-mod vm;
-mod dwarf;
-mod vm_struct;
 mod symbol_parser;
+mod vm;
+mod vm_struct;
 
 use jvmti::{JavaVMPtr, JvmtiEnvPtr};
 use std::{mem::MaybeUninit, sync::Once};

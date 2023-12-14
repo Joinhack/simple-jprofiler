@@ -16,10 +16,10 @@ impl NativeFunc {
     pub fn create(name: *const i8, lib_index: u16) -> Self {
         let name = unsafe { CStr::from_ptr(name).to_bytes() };
         let name = name.into();
-        Self { 
-            lib_index, 
+        Self {
+            lib_index,
             mark: false,
-            name 
+            name,
         }
     }
 
@@ -38,17 +38,13 @@ impl NativeFunc {
 
     #[inline(always)]
     pub fn name_str(&self) -> &str {
-        unsafe {
-            std::str::from_utf8_unchecked(&self.name)    
-        }
+        unsafe { std::str::from_utf8_unchecked(&self.name) }
     }
-
 
     #[inline(always)]
     pub fn name_mut(&mut self) -> &mut [u8] {
         &mut self.name
     }
-
 }
 
 pub struct CodeBlob {
@@ -82,8 +78,8 @@ impl CodeBlob {
 pub struct CodeCache {
     name: NativeFunc,
     lib_index: u16,
-    pub(crate)min_address: *const i8,
-    pub(crate)max_address: *const i8,
+    pub(crate) min_address: *const i8,
+    pub(crate) max_address: *const i8,
     text_base: *const i8,
     got_start: *const *const i8,
     got_end: *const *const i8,
@@ -98,9 +94,10 @@ impl CodeCache {
     }
 
     pub fn find_symbol(&self, name: &[u8]) -> Option<*const i8> {
-        self.blobs.iter().find(|blob| {
-            blob.name.name() == name 
-        }).map(|blob| blob.start)
+        self.blobs
+            .iter()
+            .find(|blob| blob.name.name() == name)
+            .map(|blob| blob.start)
     }
 
     pub fn new_with_address_range(
@@ -154,7 +151,7 @@ impl CodeCache {
     }
 
     pub fn update_bounds(&mut self, start: *const i8, end: *const i8) {
-        if start  < self.min_address {
+        if start < self.min_address {
             self.min_address = start;
         }
         if end > self.max_address {
@@ -181,21 +178,27 @@ impl CodeCache {
     }
 
     pub fn find_symbol_prefix(&self, name: &[u8]) -> Option<*const i8> {
-        self.blobs.iter()
+        self.blobs
+            .iter()
             .find(|blob| blob.name.name().starts_with(name))
             .map(|blob| blob.start)
     }
 
     #[inline(always)]
-    pub fn contains(&self, addr: *const i8 ) -> bool {
-        addr >= self.min_address  && addr < self.max_address
+    pub fn contains(&self, addr: *const i8) -> bool {
+        addr >= self.min_address && addr < self.max_address
     }
 
-    pub fn set_global_offset_table(&mut self, start: *const *const i8, end: *const *const i8, patchable: bool) {
+    pub fn set_global_offset_table(
+        &mut self,
+        start: *const *const i8,
+        end: *const *const i8,
+        patchable: bool,
+    ) {
         self.got_start = start;
         self.got_end = end;
         self.got_patchable = patchable;
-    }  
+    }
 }
 
 mod test {

@@ -1,5 +1,5 @@
-use std::{ptr, mem};
 use std::sync::atomic::Ordering;
+use std::{mem, ptr};
 use std::{sync::atomic::AtomicBool, time::Duration};
 
 use crate::code_cache::CodeCache;
@@ -33,25 +33,27 @@ impl Profiler {
             queue,
             sigprof,
             running,
-            code_caches: Vec::new()
+            code_caches: Vec::new(),
         }
     }
 
     #[inline(always)]
-    pub fn update_symbols(&mut self) {
-        SymbolParser::instance().parse_libraries(&mut self.code_caches);
+    pub fn update_symbols(&mut self, parse_kernel: bool) {
+        SymbolParser::instance().parse_libraries(&mut self.code_caches, parse_kernel);
     }
-    
+
     pub fn find_lib_by_address(&self, addr: *const i8) -> Option<&'static CodeCache> {
-        self.code_caches.iter()
+        self.code_caches
+            .iter()
             .find(|code_cache| code_cache.contains(addr))
-            .map(|c| unsafe {
-                mem::transmute(c)   
-            })
+            .map(|c| unsafe { mem::transmute(c) })
     }
 
     pub fn start(&mut self, jni: JNIEnv) {
-        self.update_symbols();
+        if self.running.load(Ordering::Acquire) {
+            return;
+        }
+        self.update_symbols(false);
         let jthr = VM::new_java_thread(jni, c_str!("Agent Profiler Thread")).unwrap();
         let jvmti = get_vm_mut().jvmti();
         jvmti.run_agent_thread(

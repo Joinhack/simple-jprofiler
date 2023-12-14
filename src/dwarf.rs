@@ -1,8 +1,8 @@
-use std::{ptr, ops::Add};
+use std::{ops::Add, ptr};
 
-const DW_STACK_SLOT: i32 = std::mem::size_of::<*const()>() as _;
+const DW_STACK_SLOT: i32 = std::mem::size_of::<*const ()>() as _;
 
-#[cfg(target_pointer_width= "64")]
+#[cfg(target_pointer_width = "64")]
 mod target64 {
     pub const DWARF_SUPPORTED: bool = true;
     pub const DW_REG_FP: i32 = 6;
@@ -10,11 +10,10 @@ mod target64 {
     pub const DW_REG_PC: i32 = 8;
 }
 
-#[cfg(target_pointer_width= "64")]
+#[cfg(target_pointer_width = "64")]
 use target64::*;
 
-
-#[cfg(target_pointer_width= "32")]
+#[cfg(target_pointer_width = "32")]
 mod target32 {
     pub const DWARF_SUPPORTED: bool = true;
     pub const DW_REG_FP: i32 = 5;
@@ -22,14 +21,15 @@ mod target32 {
     pub const DW_REG_PC: i32 = 8;
 }
 
-#[cfg(target_pointer_width= "32")]
+#[cfg(target_pointer_width = "32")]
 use target32::*;
 
 use crate::log_error;
 
-
 static DEFAULT_FRAME: FrameDesc = FrameDesc {
-    loc: 0,cfa: DW_REG_FP | (2 * DW_STACK_SLOT) << 8,fp_off:0 
+    loc: 0,
+    cfa: DW_REG_FP | (2 * DW_STACK_SLOT) << 8,
+    fp_off: 0,
 };
 
 pub struct FrameDesc {
@@ -75,15 +75,18 @@ impl DwarfParser {
         let eh_frame_ptr_enc = *eh_frame_hdr.add(1) as u8;
         let fde_count_enc = *eh_frame_hdr.add(2) as u8;
         let table_enc = *eh_frame_hdr.add(3) as u8;
-        if version != 0x1 || (eh_frame_ptr_enc & 0x7) != 0x3 || 
-            (fde_count_enc & 0x7) != 0x3 || (table_enc & 0xf7) != 0x33 {
+        if version != 0x1
+            || (eh_frame_ptr_enc & 0x7) != 0x3
+            || (fde_count_enc & 0x7) != 0x3
+            || (table_enc & 0xf7) != 0x33
+        {
             log_error!("WARN: .eh_frame_hdr {version:#X} {eh_frame_ptr_enc:#X} {fde_count_enc:#X} {table_enc:#X}");
             return;
         }
         let fde_count = *(eh_frame_hdr.add(8) as *const u32);
         let table = *(eh_frame_hdr.add(16) as *const u32);
         for i in 0..fde_count {
-            self.ptr = eh_frame_hdr.add(table.add(i*2) as _);
+            self.ptr = eh_frame_hdr.add(table.add(i * 2) as _);
             self.parse_fde();
         }
     }
@@ -122,7 +125,7 @@ impl DwarfParser {
         loop {
             let p = *self.ptr as u8;
             result |= (p as u32 & 0x7f) << shift;
-            if p&0x80 == 0 {
+            if p & 0x80 == 0 {
                 break;
             }
             shift += 7;
@@ -162,7 +165,7 @@ impl DwarfParser {
 
     unsafe fn parse_cie(&mut self) {
         let cie_len = self.getu32();
-        if cie_len == 0 ||  cie_len == 0xffffffff {
+        if cie_len == 0 || cie_len == 0xffffffff {
             return;
         }
         let cie_start = self.ptr;
@@ -180,7 +183,7 @@ impl DwarfParser {
 
     unsafe fn parse_fde(&mut self) {
         let fde_len = self.getu32();
-        if fde_len == 0 ||  fde_len == 0xffffffff {
+        if fde_len == 0 || fde_len == 0xffffffff {
             return;
         }
         let fde_start = self.ptr;
@@ -194,4 +197,3 @@ impl DwarfParser {
         todo!()
     }
 }
-

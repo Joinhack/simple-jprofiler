@@ -1,51 +1,48 @@
 use std::{
+    collections::HashSet,
     fs,
+    io::{BufRead, BufReader},
     ptr,
-    io::{BufReader, BufRead},
-    collections::HashSet
 };
 
-use crate::{
-    code_cache::CodeCache, 
-    profiler::MAX_CODE_CACHE_ARRAY
-};
+use crate::{code_cache::CodeCache, profiler::MAX_CODE_CACHE_ARRAY};
 
-const SHN_UNDEF: u8  = 0;
-const ET_EXEC: u16  =   2;
+const SHN_UNDEF: u8 = 0;
+const ET_EXEC: u16 = 2;
 
-const DT_NULL: i64 =     0;
-const DT_NEEDED: i64 =   1;
+const DT_NULL: i64 = 0;
+const DT_NEEDED: i64 = 1;
 const DT_PLTRELSZ: i64 = 2;
-const DT_PLTGOT: i64 =   3;
-const DT_HASH: i64 =     4;
-const DT_STRTAB: i64 =   5;
-const DT_SYMTAB: i64 =   6;
-const DT_RELA: i64 =     7;
-const DT_RELASZ: i64 =   8;
-const DT_RELAENT: i64 =  9;
-const DT_STRSZ: i64 =    10;
-const DT_SYMENT: i64 =   11;
-const DT_INIT: i64 =     12;
-const DT_FINI: i64 =     13;
-const DT_SONAME: i64 =   14;
-const DT_RPATH: i64 =    15;
+const DT_PLTGOT: i64 = 3;
+const DT_HASH: i64 = 4;
+const DT_STRTAB: i64 = 5;
+const DT_SYMTAB: i64 = 6;
+const DT_RELA: i64 = 7;
+const DT_RELASZ: i64 = 8;
+const DT_RELAENT: i64 = 9;
+const DT_STRSZ: i64 = 10;
+const DT_SYMENT: i64 = 11;
+const DT_INIT: i64 = 12;
+const DT_FINI: i64 = 13;
+const DT_SONAME: i64 = 14;
+const DT_RPATH: i64 = 15;
 const DT_SYMBOLIC: i64 = 16;
-const DT_REL: i64 =      17;
-const DT_RELSZ: i64 =    18;
-const DT_RELENT: i64 =   19;
-const DT_PLTREL: i64 =   20;
-const DT_DEBUG: i64 =    21;
-const DT_TEXTREL: i64 =  22;
-const DT_JMPREL: i64 =   23;
-const DT_RELACOUNT: i64 =  0x6ffffff9;
-const DT_RELCOUNT: i64 =  0x6ffffffa;
+const DT_REL: i64 = 17;
+const DT_RELSZ: i64 = 18;
+const DT_RELENT: i64 = 19;
+const DT_PLTREL: i64 = 20;
+const DT_DEBUG: i64 = 21;
+const DT_TEXTREL: i64 = 22;
+const DT_JMPREL: i64 = 23;
+const DT_RELACOUNT: i64 = 0x6ffffff9;
+const DT_RELCOUNT: i64 = 0x6ffffffa;
 
 #[cfg(target_pointer_width = "64")]
 mod target_64 {
     pub const R_GLOB_DAT: u64 = 6;
 
     pub const ELF_R_TYPE_MASK: u64 = 0xffffffff;
-  
+
     #[derive(Clone, Copy)]
     #[repr(C)]
     #[allow(non_camel_case_types)]
@@ -69,7 +66,7 @@ mod target_64 {
         pub d_val: libc::Elf64_Xword,
         pub d_ptr: libc::Elf64_Addr,
     }
-    
+
     #[derive(Clone, Copy)]
     #[repr(C)]
     #[allow(non_camel_case_types)]
@@ -121,7 +118,7 @@ mod target_32 {
         pub d_val: Elf32_Sword,
         pub d_ptr: libc::Elf32_Addr,
     }
-    
+
     #[derive(Clone, Copy)]
     #[repr(C)]
     #[allow(non_camel_case_types)]
@@ -156,8 +153,8 @@ struct MemoryMapDesc<'a> {
 macro_rules! split {
     ($split: ident, $s: expr) => {
         match $split.iter().position(|a| *a == $s) {
-            Some(pos) => (&$split[0..pos], &$split[pos+1..]),
-            None => ($split, &[][..])
+            Some(pos) => (&$split[0..pos], &$split[pos + 1..]),
+            None => ($split, &[][..]),
         }
     };
 }
@@ -176,7 +173,7 @@ impl<'a> MemoryMapDesc<'a> {
             Some(pos) => &split[pos..],
             None => &[],
         };
-        Self { 
+        Self {
             addr,
             end,
             perm,
@@ -184,7 +181,7 @@ impl<'a> MemoryMapDesc<'a> {
             dev,
             inode,
             file,
-         }
+        }
     }
 
     fn is_readable(&self) -> bool {
@@ -195,24 +192,24 @@ impl<'a> MemoryMapDesc<'a> {
         let addr = std::str::from_utf8_unchecked(b);
         match u64::from_str_radix(addr, r) {
             Err(_) => 0,
-            Ok(p) => p, 
+            Ok(p) => p,
         }
     }
 
     pub fn end(&self) -> *const i8 {
-        unsafe {Self::str_to_addr(self.end, 16) as _}
+        unsafe { Self::str_to_addr(self.end, 16) as _ }
     }
 
     pub fn addr(&self) -> *const i8 {
-        unsafe {Self::str_to_addr(self.addr, 16) as _}
+        unsafe { Self::str_to_addr(self.addr, 16) as _ }
     }
 
     pub fn offs(&self) -> u64 {
-        unsafe {Self::str_to_addr(self.offs, 16) as _}
+        unsafe { Self::str_to_addr(self.offs, 16) as _ }
     }
 
     pub fn inode(&self) -> u64 {
-        unsafe {Self::str_to_addr(self.inode, 10) as _}
+        unsafe { Self::str_to_addr(self.inode, 10) as _ }
     }
 
     pub fn is_empty_file(&self) -> bool {
@@ -222,37 +219,34 @@ impl<'a> MemoryMapDesc<'a> {
     pub fn dev(&self) -> u64 {
         let dev = self.dev;
         let (maj, min) = split!(dev, b':');
-        let maj = unsafe {Self::str_to_addr(maj, 16)};
-        let min = unsafe {Self::str_to_addr(min, 16)};
-        (maj<<8) | min
+        let maj = unsafe { Self::str_to_addr(maj, 16) };
+        let min = unsafe { Self::str_to_addr(min, 16) };
+        (maj << 8) | min
     }
-
 
     fn is_executable(&self) -> bool {
         self.perm[2] == b'x'
     }
 }
 
-pub(crate)struct SymbolParserImpl {
+pub(crate) struct SymbolParserImpl {
     parsed_library: HashSet<u64>,
     parsed_inode: HashSet<u64>,
 }
 
 impl SymbolParserImpl {
     pub fn new() -> Self {
-        Self { 
+        Self {
             parsed_library: HashSet::new(),
             parsed_inode: HashSet::new(),
         }
     }
 
-    pub fn parse_libraries(&mut self, code_caches: &mut Vec<CodeCache>) {
-        let mut map_file = match fs::OpenOptions::new()
-            .read(true)
-            .open("/proc/self/maps") {
-                Ok(f) => BufReader::new(f),
-                Err(_) => return,
-            };
+    pub fn parse_libraries(&mut self, code_caches: &mut Vec<CodeCache>, _parse_kernel: bool) {
+        let mut map_file = match fs::OpenOptions::new().read(true).open("/proc/self/maps") {
+            Ok(f) => BufReader::new(f),
+            Err(_) => return,
+        };
         let mut line = String::new();
         let mut image_end: *const i8 = ptr::null();
         let mut last_readable_base: *const i8 = ptr::null();
@@ -282,16 +276,16 @@ impl SymbolParserImpl {
                     break;
                 }
                 let mut cc = CodeCache::new_with_address_range(
-                    desc.file.as_ptr() as _, 
-                    array_len as _, 
-                    image_base, 
-                    image_end
+                    desc.file.as_ptr() as _,
+                    array_len as _,
+                    image_base,
+                    image_end,
                 );
                 let inode = desc.inode();
                 if inode != 0 {
                     // Do not parse the same executable twice, e.g. on Alpine Linux
                     if self.parsed_inode.insert(desc.dev() << 32 | inode) {
-                        image_base = unsafe {image_base.offset(- (desc.offs() as isize))};
+                        image_base = unsafe { image_base.offset(-(desc.offs() as isize)) };
                         if image_base >= last_readable_base {
                             // ElfParser::parse_program_headers()
                         }
@@ -304,7 +298,6 @@ impl SymbolParserImpl {
             line.truncate(0);
         }
     }
-
 }
 
 struct ElfParser<'a, 'b> {
@@ -317,10 +310,9 @@ struct ElfParser<'a, 'b> {
 }
 
 impl<'a, 'b> ElfParser<'a, 'b> {
-
-    fn new(cc: &'a mut CodeCache, base: *const i8, addr :*const i8, file_name: &'b [u8]) -> Self {
+    fn new(cc: &'a mut CodeCache, base: *const i8, addr: *const i8, file_name: &'b [u8]) -> Self {
         unsafe {
-            let header = addr as *const ElfHeader ;
+            let header = addr as *const ElfHeader;
             let sections = addr.add((*header).e_shoff as _);
             let vaddr_diff = ptr::null();
             Self {
@@ -338,9 +330,14 @@ impl<'a, 'b> ElfParser<'a, 'b> {
     unsafe fn valid_header(&self) -> bool {
         let elf_header = &*self.header;
         let ident = &elf_header.e_ident[..];
-        ident[0] == 0x7f && ident[1] == b'E' && ident[2] == b'L' && ident[3] == b'F' &&
-        ident[4] == ELFCLASS_SUPPORTED && ident[5] == libc::ELFDATA2LSB &&
-        ident[6] == libc::EV_CURRENT as _ && elf_header.e_shstrndx != SHN_UNDEF as _
+        ident[0] == 0x7f
+            && ident[1] == b'E'
+            && ident[2] == b'L'
+            && ident[3] == b'F'
+            && ident[4] == ELFCLASS_SUPPORTED
+            && ident[5] == libc::ELFDATA2LSB
+            && ident[6] == libc::EV_CURRENT as _
+            && elf_header.e_shstrndx != SHN_UNDEF as _
     }
 
     #[inline(always)]
@@ -349,12 +346,12 @@ impl<'a, 'b> ElfParser<'a, 'b> {
     }
 
     #[inline(always)]
-    unsafe fn at_sectionhdr(&self, sec: *const ElfSection) ->  *const i8 {
+    unsafe fn at_sectionhdr(&self, sec: *const ElfSection) -> *const i8 {
         (self.header as *const i8).offset((*sec).sh_offset as _)
     }
 
     #[inline(always)]
-    unsafe fn at_programhdr(&self, pheader: *const ElfProgramHeader) ->  *const i8 {
+    unsafe fn at_programhdr(&self, pheader: *const ElfProgramHeader) -> *const i8 {
         if (*self.header).e_type == ET_EXEC {
             (*pheader).p_paddr as _
         } else {
@@ -362,13 +359,12 @@ impl<'a, 'b> ElfParser<'a, 'b> {
         }
     }
 
-    unsafe fn parse_program_headers(cc: &'a mut CodeCache, base: *const i8, end :*const i8) {
+    unsafe fn parse_program_headers(cc: &'a mut CodeCache, base: *const i8, end: *const i8) {
         let mut elf_parser = ElfParser::new(cc, base, base, &[]);
-        if elf_parser.valid_header() && base.offset((*elf_parser.header).e_phoff as _) < end  {
+        if elf_parser.valid_header() && base.offset((*elf_parser.header).e_phoff as _) < end {
             elf_parser.set_text_base(base);
             elf_parser.calc_virtual_local_address();
             elf_parser.parse_dynamic_section();
-            
         }
     }
 
@@ -382,7 +378,7 @@ impl<'a, 'b> ElfParser<'a, 'b> {
         if dynamic.is_null() {
             return;
         }
-        let mut got_start: *const *const ()  = ptr::null();
+        let mut got_start: *const *const () = ptr::null();
         let mut pltrelsz: isize = 0;
         let mut relsz: isize = 0;
         let mut relent: isize = 0;
@@ -391,29 +387,33 @@ impl<'a, 'b> ElfParser<'a, 'b> {
         let dyn_start = self.at_programhdr(dynamic);
         let dyn_end = dyn_start.add((*dynamic).p_memsz as _);
         let mut dy = dyn_start as *const ElfDyn;
-        while dy < dyn_end as * const _ {
-            match (*dy).d_tag  {
+        while dy < dyn_end as *const _ {
+            match (*dy).d_tag {
                 DT_PLTGOT => got_start = (dyn_ptr!((*dy).d_un.d_ptr) as *const *const ()).add(3),
                 DT_PLTRELSZ => pltrelsz = (*dy).d_un.d_val as _,
-                DT_RELA|DT_REL => rel = dyn_ptr!((*dy).d_un.d_ptr) as _,
-                DT_RELASZ|DT_RELSZ => relsz = (*dy).d_un.d_val as _,
-                DT_RELAENT|DT_RELENT => relent = (*dy).d_un.d_val as _,
-                DT_RELACOUNT|DT_RELCOUNT => relcount = (*dy).d_un.d_val as _,
-                _ => {},
+                DT_RELA | DT_REL => rel = dyn_ptr!((*dy).d_un.d_ptr) as _,
+                DT_RELASZ | DT_RELSZ => relsz = (*dy).d_un.d_val as _,
+                DT_RELAENT | DT_RELENT => relent = (*dy).d_un.d_val as _,
+                DT_RELACOUNT | DT_RELCOUNT => relcount = (*dy).d_un.d_val as _,
+                _ => {}
             };
             dy = dy.add(1);
         }
 
         if relent != 0 {
             if pltrelsz != 0 && got_start.is_null() {
-                self.cc.set_global_offset_table(got_start as _, got_start.add((pltrelsz / relent) as _) as _, false);
+                self.cc.set_global_offset_table(
+                    got_start as _,
+                    got_start.add((pltrelsz / relent) as _) as _,
+                    false,
+                );
             } else if rel.is_null() && relsz != 0 {
                 let mut min_addr: *const *const () = -1 as _;
                 let mut max_addr: *const *const () = 0 as _;
                 let mut offs = relcount * relent;
                 while offs < relsz {
                     let r = rel.add(offs as _) as *const ElfRelocation;
-                    if ((*r).r_info&ELF_R_TYPE_MASK) == R_GLOB_DAT {
+                    if ((*r).r_info & ELF_R_TYPE_MASK) == R_GLOB_DAT {
                         let addr = self.base.add((*r).r_offset as _) as _;
                         if addr < min_addr {
                             min_addr = addr;
@@ -429,7 +429,8 @@ impl<'a, 'b> ElfParser<'a, 'b> {
                     got_start = min_addr;
                 }
                 if max_addr >= got_start {
-                    self.cc.set_global_offset_table(got_start as _, max_addr.add(1) as _, false);
+                    self.cc
+                        .set_global_offset_table(got_start as _, max_addr.add(1) as _, false);
                 }
             }
         }
@@ -438,7 +439,8 @@ impl<'a, 'b> ElfParser<'a, 'b> {
     unsafe fn find_program_header(&self, typ: u32) -> *const ElfProgramHeader {
         let pheaders = (self.header as *const i8).offset((*self.header).e_phoff as _);
         for i in 0..(*self.header).e_phnum as isize {
-            let pheader = &*(pheaders.offset(i*((*self.header).e_phentsize as isize)) as *const ElfProgramHeader);
+            let pheader = &*(pheaders.offset(i * ((*self.header).e_phentsize as isize))
+                as *const ElfProgramHeader);
             if pheader.p_type == typ {
                 return pheader;
             }
@@ -449,9 +451,10 @@ impl<'a, 'b> ElfParser<'a, 'b> {
     unsafe fn calc_virtual_local_address(&mut self) {
         let pheaders = (self.header as *const i8).offset((*self.header).e_phoff as _);
         for i in 0..(*self.header).e_phnum as isize {
-            let pheader = &*(pheaders.offset(i*((*self.header).e_phentsize as isize)) as *const ElfProgramHeader);
+            let pheader = &*(pheaders.offset(i * ((*self.header).e_phentsize as isize))
+                as *const ElfProgramHeader);
             if pheader.p_type == libc::PT_LOAD {
-                self.vaddr_diff = self.base.offset(- (pheader.p_vaddr as isize));
+                self.vaddr_diff = self.base.offset(-(pheader.p_vaddr as isize));
             }
         }
         self.vaddr_diff = self.base;
@@ -471,10 +474,10 @@ mod test {
         assert_eq!(desc.dev, b"fd:00");
         assert_eq!(desc.inode, b"100694562");
         assert_eq!(desc.file, b"/usr/bin/cat\0");
-        assert_eq!(desc.dev(), 0xfd<<8 | 00);
+        assert_eq!(desc.dev(), 0xfd << 8 | 00);
         assert_eq!(desc.inode(), 100694562);
         assert_eq!(desc.addr() as u64, 0x0060c000);
-        assert_eq!(desc.end()as u64, 0x0060d000);
+        assert_eq!(desc.end() as u64, 0x0060d000);
         assert_eq!(desc.is_executable(), false);
         assert_eq!(desc.is_readable(), true);
     }

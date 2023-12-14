@@ -1,4 +1,4 @@
-use std::{ptr, ffi::CStr, fmt::Display};
+use std::{ffi::CStr, fmt::Display, ptr};
 
 use crate::code_cache::CodeCache;
 
@@ -53,37 +53,93 @@ impl Display for VMStruct {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let _ = write!(f, "klass_name_offset:{:#X}", self.klass_name_offset);
         let _ = write!(f, ", symbol_length_offset:{:#X}", self.symbol_length_offset);
-        let _ = write!(f, ", symbol_length_and_refcount_offset:{:#X}", self.symbol_length_and_refcount_offset);
+        let _ = write!(
+            f,
+            ", symbol_length_and_refcount_offset:{:#X}",
+            self.symbol_length_and_refcount_offset
+        );
         let _ = write!(f, ", symbol_body_offset:{:#X}", self.symbol_body_offset);
         let _ = write!(f, ", nmethod_name_offset:{:#X}", self.nmethod_name_offset);
-        let _ = write!(f, ", nmethod_method_offset:{:#X}", self.nmethod_method_offset);
+        let _ = write!(
+            f,
+            ", nmethod_method_offset:{:#X}",
+            self.nmethod_method_offset
+        );
         let _ = write!(f, ", nmethod_entry_offset:{:#X}", self.nmethod_entry_offset);
         let _ = write!(f, ", nmethod_state_offset:{:#X}", self.nmethod_state_offset);
         let _ = write!(f, ", nmethod_level_offset:{:#X}", self.nmethod_level_offset);
-        let _ = write!(f, ", method_constmethod_offset:{:#X}", self.method_constmethod_offset);
+        let _ = write!(
+            f,
+            ", method_constmethod_offset:{:#X}",
+            self.method_constmethod_offset
+        );
         let _ = write!(f, ", method_code_offset:{:#X}", self.method_code_offset);
-        let _ = write!(f, ", constmethod_constants_offset:{:#X}", self.constmethod_constants_offset);
-        let _ = write!(f, ", constmethod_idnum_offset:{:#X}", self.constmethod_idnum_offset);
+        let _ = write!(
+            f,
+            ", constmethod_constants_offset:{:#X}",
+            self.constmethod_constants_offset
+        );
+        let _ = write!(
+            f,
+            ", constmethod_idnum_offset:{:#X}",
+            self.constmethod_idnum_offset
+        );
         let _ = write!(f, ", pool_holder_offset:{:#X}", self.pool_holder_offset);
-        let _ = write!(f, ", class_loader_data_offset:{:#X}", self.class_loader_data_offset);
+        let _ = write!(
+            f,
+            ", class_loader_data_offset:{:#X}",
+            self.class_loader_data_offset
+        );
         let _ = write!(f, ", methods_offset:{:#X}", self.methods_offset);
         let _ = write!(f, ", jmethod_ids_offset:{:#X}", self.jmethod_ids_offset);
-        let _ = write!(f, ", class_loader_data_next_offset:{:#X}", self.class_loader_data_next_offset);
+        let _ = write!(
+            f,
+            ", class_loader_data_next_offset:{:#X}",
+            self.class_loader_data_next_offset
+        );
         let _ = write!(f, ", klass_offset_addr:{:#X}", self.klass_offset_addr);
-        let _ = write!(f, ", thread_osthread_offset:{:#X}", self.thread_osthread_offset);
+        let _ = write!(
+            f,
+            ", thread_osthread_offset:{:#X}",
+            self.thread_osthread_offset
+        );
         let _ = write!(f, ", thread_anchor_offset:{:#X}", self.thread_anchor_offset);
         let _ = write!(f, ", thread_state_offset:{:#X}", self.thread_state_offset);
         let _ = write!(f, ", osthread_id_offset:{:#X}", self.osthread_id_offset);
         let _ = write!(f, ", anchor_sp_offset:{:#X}", self.anchor_sp_offset);
         let _ = write!(f, ", anchor_pc_offset:{:#X}", self.anchor_pc_offset);
         let _ = write!(f, ", frame_size_offset:{:#X}", self.frame_size_offset);
-        let _ = write!(f, ", frame_complete_offset:{:#X}", self.frame_complete_offset);
+        let _ = write!(
+            f,
+            ", frame_complete_offset:{:#X}",
+            self.frame_complete_offset
+        );
         let _ = write!(f, ", code_heap_addr:{:#X}", self.code_heap_addr as isize);
-        let _ = write!(f, ", code_heap_low_addr: {:#X}", self.code_heap_low_addr as isize);
-        let _ = write!(f, ", code_heap_high_addr: {:#X}", self.code_heap_high_addr as isize);
-        let _ = write!(f, ", code_heap_memory_offset:{:#X}", self.code_heap_memory_offset);
-        let _ = write!(f, ", code_heap_segmap_offset:{:#X}", self.code_heap_segmap_offset);
-        let _ = write!(f, ", code_heap_segment_shift:{:#X}", self.code_heap_segment_shift);
+        let _ = write!(
+            f,
+            ", code_heap_low_addr: {:#X}",
+            self.code_heap_low_addr as isize
+        );
+        let _ = write!(
+            f,
+            ", code_heap_high_addr: {:#X}",
+            self.code_heap_high_addr as isize
+        );
+        let _ = write!(
+            f,
+            ", code_heap_memory_offset:{:#X}",
+            self.code_heap_memory_offset
+        );
+        let _ = write!(
+            f,
+            ", code_heap_segmap_offset:{:#X}",
+            self.code_heap_segmap_offset
+        );
+        let _ = write!(
+            f,
+            ", code_heap_segment_shift:{:#X}",
+            self.code_heap_segment_shift
+        );
         let _ = write!(f, ", vs_low_bound_offset:{:#X}", self.vs_low_bound_offset);
         let _ = write!(f, ", vs_high_bound_offset:{:#X}", self.vs_high_bound_offset);
         let _ = write!(f, ", vs_low_offset:{:#X}", self.vs_low_offset);
@@ -99,7 +155,7 @@ impl Display for VMStruct {
 
 impl VMStruct {
     pub fn new() -> Self {
-        Self { 
+        Self {
             has_perm: false,
             flags_addr: ptr::null(),
             klass_name_offset: 0,
@@ -147,15 +203,15 @@ impl VMStruct {
         }
     }
 
-    pub fn initial(&mut self,  libjvm: Option<&'static CodeCache>) {
+    pub fn initial(&mut self, libjvm: Option<&'static CodeCache>) {
         self.libjvm = libjvm;
         unsafe {
-            self.initial_offset();   
+            self.initial_offset();
         }
     }
 
     /// get the offset of the symbols
-    unsafe  fn initial_offset(&mut self) {
+    unsafe fn initial_offset(&mut self) {
         let entry = self.find_symbol(b"gHotSpotVMStructs");
         let stride = self.find_symbol(b"gHotSpotVMStructEntryArrayStride");
         let type_off = self.find_symbol(b"gHotSpotVMStructEntryTypeNameOffset");
@@ -189,134 +245,118 @@ impl VMStruct {
             }
             let typ_sl = CStr::from_ptr(typ).to_bytes();
             let filed_sl = CStr::from_ptr(filed).to_bytes();
-            
+
             match typ_sl {
                 b"Klass" => {
                     if filed_sl == b"_name" {
                         asign_offset!(self.klass_name_offset);
                     }
                 }
-                b"Symbol" => {
-                    match filed_sl {
-                        b"_length" => asign_offset!(self.symbol_length_offset),
-                        b"_length_and_refcount" => asign_offset!(self.symbol_length_and_refcount_offset),
-                        b"_body" => asign_offset!(self.symbol_body_offset),
-                        _ => {}
+                b"Symbol" => match filed_sl {
+                    b"_length" => asign_offset!(self.symbol_length_offset),
+                    b"_length_and_refcount" => {
+                        asign_offset!(self.symbol_length_and_refcount_offset)
                     }
-                }
-                b"CompiledMethod"| b"nmethod"  => {
-                    match filed_sl {
-                        b"_method" => asign_offset!(self.nmethod_method_offset),
-                        b"_verified_entry_point" => asign_offset!(self.nmethod_entry_offset),
-                        b"_state" => asign_offset!(self.nmethod_state_offset),
-                        b"_comp_level" => asign_offset!(self.nmethod_level_offset),
-                        _ => {}
-                    }
-                }
-                b"Method"  => {
-                    match filed_sl {
-                        b"_constMethod" => asign_offset!(self.method_constmethod_offset),
-                        b"_code" => asign_offset!(self.method_code_offset),
-                        _ => {}
-                    }
-                }
-                b"ConstMethod"  => {
-                    match filed_sl {
-                        b"_constants" => asign_offset!(self.constmethod_constants_offset),
-                        b"_method_idnum" => asign_offset!(self.constmethod_idnum_offset),
-                        _ => {}
-                    }
-                }
-                b"ConstantPool"  => {
+                    b"_body" => asign_offset!(self.symbol_body_offset),
+                    _ => {}
+                },
+                b"CompiledMethod" | b"nmethod" => match filed_sl {
+                    b"_method" => asign_offset!(self.nmethod_method_offset),
+                    b"_verified_entry_point" => asign_offset!(self.nmethod_entry_offset),
+                    b"_state" => asign_offset!(self.nmethod_state_offset),
+                    b"_comp_level" => asign_offset!(self.nmethod_level_offset),
+                    _ => {}
+                },
+                b"Method" => match filed_sl {
+                    b"_constMethod" => asign_offset!(self.method_constmethod_offset),
+                    b"_code" => asign_offset!(self.method_code_offset),
+                    _ => {}
+                },
+                b"ConstMethod" => match filed_sl {
+                    b"_constants" => asign_offset!(self.constmethod_constants_offset),
+                    b"_method_idnum" => asign_offset!(self.constmethod_idnum_offset),
+                    _ => {}
+                },
+                b"ConstantPool" => {
                     if filed_sl == b"_pool_holder" {
                         asign_offset!(self.pool_holder_offset);
                     }
                 }
-                b"InstanceKlass"  => {
-                    match filed_sl {
-                        b"_class_loader_data" => asign_offset!(self.class_loader_data_offset),
-                        b"_methods" => asign_offset!(self.methods_offset),
-                        b"_methods_jmethod_ids" => asign_offset!(self.jmethod_ids_offset),
-                        _ => {}
-                    }
-                }
-                b"ClassLoaderData"  => {
+                b"InstanceKlass" => match filed_sl {
+                    b"_class_loader_data" => asign_offset!(self.class_loader_data_offset),
+                    b"_methods" => asign_offset!(self.methods_offset),
+                    b"_methods_jmethod_ids" => asign_offset!(self.jmethod_ids_offset),
+                    _ => {}
+                },
+                b"ClassLoaderData" => {
                     if filed_sl == b"_next" {
                         asign_offset!(self.class_loader_data_next_offset);
                     }
                 }
-                b"java_lang_Class"  => {
+                b"java_lang_Class" => {
                     if filed_sl == b"_klass_offset" {
                         asign_addr_offset!(self.klass_offset_addr);
                     }
                 }
-                b"JavaThread"  => {
-                    match filed_sl {
-                        b"_osthread" => asign_offset!(self.thread_osthread_offset),
-                        b"_anchor" => asign_offset!(self.thread_anchor_offset),
-                        b"_thread_state" => asign_offset!(self.thread_state_offset),
-                        _ => {}
-                    }
-                }
-                b"OSThread"  => {
+                b"JavaThread" => match filed_sl {
+                    b"_osthread" => asign_offset!(self.thread_osthread_offset),
+                    b"_anchor" => asign_offset!(self.thread_anchor_offset),
+                    b"_thread_state" => asign_offset!(self.thread_state_offset),
+                    _ => {}
+                },
+                b"OSThread" => {
                     if filed_sl == b"_thread_id" {
                         asign_offset!(self.osthread_id_offset);
                     }
                 }
-                b"JavaFrameAnchor"  => {
-                    match filed_sl {
-                        b"_last_Java_sp" => asign_offset!(self.anchor_sp_offset),
-                        b"_last_Java_pc" => asign_offset!(self.anchor_pc_offset),
-                        _ => {}
+                b"JavaFrameAnchor" => match filed_sl {
+                    b"_last_Java_sp" => asign_offset!(self.anchor_sp_offset),
+                    b"_last_Java_pc" => asign_offset!(self.anchor_pc_offset),
+                    _ => {}
+                },
+                b"CodeBlob" => match filed_sl {
+                    b"_frame_size" => asign_offset!(self.frame_size_offset),
+                    b"_frame_complete_offset" => asign_offset!(self.frame_complete_offset),
+                    b"_name" => asign_offset!(self.nmethod_name_offset),
+                    _ => {}
+                },
+                b"CodeCache" => match filed_sl {
+                    b"_heap" | b"_heaps" => {
+                        self.code_heap_addr = *((entry + addr_off) as *const *const *const i8)
                     }
-                }
-                b"CodeBlob"  => {
-                    match filed_sl {
-                        b"_frame_size" => asign_offset!(self.frame_size_offset),
-                        b"_frame_complete_offset" => asign_offset!(self.frame_complete_offset),
-                        b"_name" => asign_offset!(self.nmethod_name_offset),
-                        _ => {}
+                    b"_low_bound" => {
+                        self.code_heap_low_addr = *((entry + addr_off) as *const *const *const i8)
                     }
-                }
-                b"CodeCache"  => {
-                    match filed_sl {
-                        b"_heap" | b"_heaps" => self.code_heap_addr = *((entry + addr_off) as *const *const *const i8),
-                        b"_low_bound" => self.code_heap_low_addr = *((entry + addr_off) as *const *const *const i8),
-                        b"_high_bound" => self.code_heap_high_addr = *((entry + addr_off) as *const *const *const i8),
-                        _ => {}
+                    b"_high_bound" => {
+                        self.code_heap_high_addr = *((entry + addr_off) as *const *const *const i8)
                     }
-                }
-                b"CodeHeap"  => {
-                    match filed_sl {
-                        b"_memory" => asign_offset!(self.code_heap_memory_offset),
-                        b"_segmap" => asign_offset!(self.code_heap_segmap_offset),
-                        b"_log2_segment_size" => asign_offset!(self.code_heap_segment_shift),
-                        _ => {}
-                    }
-                }
-                b"VirtualSpace"  => {
-                    match filed_sl {
-                        b"_low_boundary" => asign_offset!(self.vs_low_bound_offset),
-                        b"_high_boundary" => asign_offset!(self.vs_high_bound_offset),
-                        b"_low" => asign_offset!(self.vs_low_offset),
-                        b"_high" => asign_offset!(self.vs_high_offset),
-                        _ => {}
-                    }
-                }
-                b"GrowableArray<int>"  => {
+                    _ => {}
+                },
+                b"CodeHeap" => match filed_sl {
+                    b"_memory" => asign_offset!(self.code_heap_memory_offset),
+                    b"_segmap" => asign_offset!(self.code_heap_segmap_offset),
+                    b"_log2_segment_size" => asign_offset!(self.code_heap_segment_shift),
+                    _ => {}
+                },
+                b"VirtualSpace" => match filed_sl {
+                    b"_low_boundary" => asign_offset!(self.vs_low_bound_offset),
+                    b"_high_boundary" => asign_offset!(self.vs_high_bound_offset),
+                    b"_low" => asign_offset!(self.vs_low_offset),
+                    b"_high" => asign_offset!(self.vs_high_offset),
+                    _ => {}
+                },
+                b"GrowableArray<int>" => {
                     if filed_sl == b"_data" {
                         asign_offset!(self.array_data_offset);
                     }
                 }
-                b"JVMFlag" | b"Flag"  => {
-                    match filed_sl {
-                        b"_name"|b"name" => asign_offset!(self.flag_name_offset),
-                        b"_addr"|b"addr" => asign_offset!(self.flag_addr_offset),
-                        b"flags" => self.flags_addr =  **((entry + addr_off) as *const *const *const i8),
-                        b"numFlags" => self.flag_count = **((entry + addr_off) as *const *const i32),
-                        _ => {}
-                    }
-                }
+                b"JVMFlag" | b"Flag" => match filed_sl {
+                    b"_name" | b"name" => asign_offset!(self.flag_name_offset),
+                    b"_addr" | b"addr" => asign_offset!(self.flag_addr_offset),
+                    b"flags" => self.flags_addr = **((entry + addr_off) as *const *const *const i8),
+                    b"numFlags" => self.flag_count = **((entry + addr_off) as *const *const i32),
+                    _ => {}
+                },
                 b"PermGen" => {
                     self.has_perm = true;
                 }
@@ -333,4 +373,3 @@ impl VMStruct {
             .map(|p| *(p as *const usize))
     }
 }
-
