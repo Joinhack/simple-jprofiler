@@ -1,16 +1,17 @@
-mod circle_queue;
-mod code_cache;
-mod ctrl_svr;
+mod os;
+mod vm;
 mod dwarf;
 mod jvmti;
-mod jvmti_native;
 mod r#macro;
-mod os;
+mod ctrl_svr;
+mod code_cache;
+mod stack_frame;
+mod circle_queue;
+mod jvmti_native;
 mod profiler;
+mod vm_struct;
 mod signal_prof;
 mod symbol_parser;
-mod vm;
-mod vm_struct;
 
 use jvmti::{JavaVMPtr, JvmtiEnvPtr};
 use std::{mem::MaybeUninit, sync::Once};
@@ -26,15 +27,19 @@ pub trait MaybeUninitTake<T> {
 }
 
 impl<T: Copy> MaybeUninitTake<T> for MaybeUninit<T> {
+
+    #[inline(always)]
     fn take(self) -> T {
         unsafe { *self.as_ptr() }
     }
 }
 
+#[inline(always)]
 pub fn get_vm_mut() -> &'static mut VM {
     unsafe { VM_INSTANCE.as_mut().unwrap() }
 }
 
+#[inline(always)]
 pub fn get_vm() -> &'static VM {
     unsafe { VM_INSTANCE.as_ref().unwrap() }
 }

@@ -3,7 +3,7 @@ use crate::jvmti::{JNIEnv, JNIEnvPtr, JavaVM, JvmtiEnv, JvmtiEnvPtr, JvmtiEventC
 use crate::jvmti_native::{jint, jmethodID, jthread, JVMTI_ENABLE, JVMTI_EVENT_VM_INIT};
 use crate::profiler::Profiler;
 use crate::vm_struct::VMStruct;
-use crate::{c_str, check_null, get_vm_mut, jni_method, log_error, MaybeUninitTake};
+use crate::{c_str, check_null, get_vm_mut, jni_method, log_error, MaybeUninitTake, stack_frame};
 use std::mem::{self, MaybeUninit};
 use std::ptr;
 
@@ -105,7 +105,9 @@ impl VM {
     }
 
     extern "C" fn vm_init(_jvmti: JvmtiEnvPtr, jni: JNIEnvPtr, _jthr: jthread) {
-        get_vm_mut().ctrl_svr.start(jni.into());
+        let vm = get_vm_mut();
+        vm.vm_struct.ready();
+        vm.ctrl_svr.start(jni.into());
     }
 
     pub fn get_jni_env(&self) -> Option<JNIEnv> {
@@ -221,5 +223,10 @@ impl VM {
             };
         }
         Some(jthr)
+    }
+
+    #[inline(always)]
+    pub fn vm_struct(&self) -> &VMStruct {
+        &self.vm_struct
     }
 }

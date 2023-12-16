@@ -1,6 +1,12 @@
-use std::{ffi::CStr, fmt::Display, ptr};
+mod code_heap;
+mod nmethod;
+use nmethod::*;
+use code_heap::*;
+use std::{ffi::CStr, fmt::Display, ptr, mem};
 
-use crate::code_cache::CodeCache;
+use libc::uintptr_t;
+
+use crate::{code_cache::CodeCache, jvmti_native::jfieldID};
 
 pub(crate) struct VMStruct {
     klass_name_offset: i32,
@@ -21,7 +27,7 @@ pub(crate) struct VMStruct {
     methods_offset: i32,
     jmethod_ids_offset: i32,
     class_loader_data_next_offset: i32,
-    klass_offset_addr: i32,
+    klass_offset_addr: *const i32,
     thread_osthread_offset: i32,
     thread_anchor_offset: i32,
     thread_state_offset: i32,
@@ -33,10 +39,13 @@ pub(crate) struct VMStruct {
     code_heap_addr: *const *const i8,
     code_heap_low_addr: *const *const i8,
     code_heap_high_addr: *const *const i8,
+    code_heap_low: *const i8,
+    code_heap_high: *const i8,
     code_heap_memory_offset: i32,
     code_heap_segmap_offset: i32,
     code_heap_segment_shift: i32,
     vs_low_bound_offset: i32,
+    code_heap: [*const i8;3],
     vs_high_bound_offset: i32,
     vs_low_offset: i32,
     vs_high_offset: i32,
@@ -47,6 +56,9 @@ pub(crate) struct VMStruct {
     flag_count: i32,
     libjvm: Option<&'static CodeCache>,
     has_perm: bool,
+    klass: jfieldID,
+    has_class_names: bool,
+    has_method_structs: bool,
 }
 
 impl Display for VMStruct {
@@ -97,7 +109,7 @@ impl Display for VMStruct {
             ", class_loader_data_next_offset:{:#X}",
             self.class_loader_data_next_offset
         );
-        let _ = write!(f, ", klass_offset_addr:{:#X}", self.klass_offset_addr);
+        let _ = write!(f, ", klass_offset_addr:{:#p}", self.klass_offset_addr);
         let _ = write!(
             f,
             ", thread_osthread_offset:{:#X}",
@@ -158,48 +170,54 @@ impl VMStruct {
         Self {
             has_perm: false,
             flags_addr: ptr::null(),
-            klass_name_offset: 0,
-            symbol_length_offset: 0,
-            symbol_length_and_refcount_offset: 0,
-            symbol_body_offset: 0,
-            nmethod_name_offset: 0,
-            nmethod_method_offset: 0,
-            nmethod_entry_offset: 0,
-            nmethod_state_offset: 0,
-            nmethod_level_offset: 0,
-            method_constmethod_offset: 0,
-            method_code_offset: 0,
-            constmethod_constants_offset: 0,
-            constmethod_idnum_offset: 0,
-            pool_holder_offset: 0,
-            class_loader_data_offset: 0,
-            methods_offset: 0,
-            jmethod_ids_offset: 0,
-            class_loader_data_next_offset: 0,
-            klass_offset_addr: 0,
-            thread_osthread_offset: 0,
-            thread_anchor_offset: 0,
-            thread_state_offset: 0,
-            osthread_id_offset: 0,
-            anchor_sp_offset: 0,
-            anchor_pc_offset: 0,
-            frame_size_offset: 0,
-            frame_complete_offset: 0,
+            klass_name_offset: -1,
+            symbol_length_offset: -1,
+            symbol_length_and_refcount_offset: -1,
+            symbol_body_offset: -1,
+            nmethod_name_offset: -1,
+            nmethod_method_offset: -1,
+            nmethod_entry_offset: -1,
+            nmethod_state_offset: -1,
+            nmethod_level_offset: -1,
+            method_constmethod_offset: -1,
+            method_code_offset: -1,
+            constmethod_constants_offset: -1,
+            constmethod_idnum_offset: -1,
+            pool_holder_offset: -1,
+            class_loader_data_offset: -1,
+            methods_offset: -1,
+            jmethod_ids_offset: -1,
+            class_loader_data_next_offset: -1,
+            klass_offset_addr: ptr::null(),
+            thread_osthread_offset: -1,
+            thread_anchor_offset: -1,
+            thread_state_offset: -1,
+            osthread_id_offset: -1,
+            anchor_sp_offset: -1,
+            anchor_pc_offset: -1,
+            frame_size_offset: -1,
+            frame_complete_offset: -1,
             code_heap_addr: ptr::null(),
             code_heap_low_addr: ptr::null(),
             code_heap_high_addr: ptr::null(),
-            code_heap_memory_offset: 0,
-            code_heap_segmap_offset: 0,
-            code_heap_segment_shift: 0,
-            vs_low_bound_offset: 0,
-            vs_high_bound_offset: 0,
-            vs_low_offset: 0,
-            vs_high_offset: 0,
-            array_data_offset: 0,
-            flag_name_offset: 0,
-            flag_addr_offset: 0,
-            flag_count: 0,
+            code_heap_memory_offset: -1,
+            code_heap_segmap_offset: -1,
+            code_heap_segment_shift: -1,
+            vs_low_bound_offset: -1,
+            vs_high_bound_offset: -1,
+            vs_low_offset: -1,
+            vs_high_offset: -1,
+            array_data_offset: -1,
+            flag_name_offset: -1,
+            flag_addr_offset: -1,
+            flag_count: -1,
             libjvm: None,
+            klass: ptr::null_mut(),
+            has_class_names: false,
+            code_heap:[ptr::null(); 3],
+            has_method_structs: false,
+            code_heap_low: ptr::null(),
+            code_heap_high: ptr::null(),
         }
     }
 
@@ -295,7 +313,7 @@ impl VMStruct {
                 }
                 b"java_lang_Class" => {
                     if filed_sl == b"_klass_offset" {
-                        asign_addr_offset!(self.klass_offset_addr);
+                        self.klass_offset_addr = *((entry + addr_off) as *const *const i32)
                     }
                 }
                 b"JavaThread" => match filed_sl {
@@ -371,5 +389,57 @@ impl VMStruct {
         self.libjvm
             .and_then(|libjvm| libjvm.find_symbol(name))
             .map(|p| *(p as *const usize))
+    }
+
+    pub fn ready(&mut self) {
+        unsafe {
+            self.resovle_offset();
+        }
+    } 
+
+    pub unsafe fn resovle_offset(&mut self) {
+        if !self.klass_offset_addr.is_null() {
+            self.klass = ((*self.klass_offset_addr)<<2|2) as uintptr_t as jfieldID
+        }
+        self.has_class_names = self.klass_name_offset >= 0
+            && (self.symbol_length_offset >= 0 || self.symbol_length_and_refcount_offset >= 0)
+            && self.symbol_body_offset >= 0
+            && !self.klass.is_null();
+        self.has_method_structs =self.jmethod_ids_offset >= 0
+            && self.nmethod_method_offset >= 0
+            && self.nmethod_entry_offset >= 0
+            && self.nmethod_state_offset >= 0
+            && self.method_constmethod_offset >= 0
+            && self.method_code_offset >= 0
+            && self.constmethod_constants_offset >= 0
+            && self.constmethod_idnum_offset >= 0
+            && self.pool_holder_offset >= 0;
+        // hotspot the heap
+        if !self.code_heap_addr.is_null() && 
+            !self.code_heap_low_addr.is_null() &&
+            !self.code_heap_high_addr.is_null() {
+            let code_heaps = *self.code_heap_addr;
+            let code_heap_count = *(code_heaps as *const i32);
+            if code_heap_count <= 3 && self.array_data_offset >= 0 {
+                let code_heap_array = *(code_heaps.add(self.array_data_offset as _) as *const *const i8);
+                for i in 0..code_heap_count as _ {
+                    self.code_heap[i] = *((code_heap_array as *const *const i8).add(i));
+                }
+            }
+            self.code_heap_low = *self.code_heap_low_addr;
+            self.code_heap_high = *self.code_heap_high_addr;
+        }
+        if !self.code_heap[0].is_null() && self.code_heap_segment_shift >= 0 {
+            self.code_heap_segment_shift = *(self.code_heap[0].add(self.code_heap_segment_shift as _) as *const i32);
+        }
+        if self.code_heap_memory_offset < 0 || self.code_heap_segmap_offset < 0 ||
+            self.code_heap_segment_shift < 0 || self.code_heap_segment_shift > 16 {
+            self.code_heap = [ptr::null(); 3];
+        }
+    }
+
+    #[inline(always)]
+    pub fn has_method_structs(&self) ->  bool {
+        self.has_method_structs
     }
 }
