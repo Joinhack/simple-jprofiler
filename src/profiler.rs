@@ -1,3 +1,4 @@
+use std::mem::MaybeUninit;
 use std::sync::atomic::Ordering;
 use std::{mem, ptr};
 use std::{sync::atomic::AtomicBool, time::Duration};
@@ -5,17 +6,20 @@ use std::{sync::atomic::AtomicBool, time::Duration};
 use crate::code_cache::CodeCache;
 use crate::jvmti::{JNIEnv, JVMTI_THREAD_NORM_PRIORITY};
 use crate::signal_prof::{SigactionFn, SignalProf};
+use crate::stack_walker::{StackWalker, StackContext};
 use crate::symbol_parser::SymbolParser;
 use crate::vm::JVMPICallTrace;
 use crate::{c_str, log_error};
 use crate::{circle_queue::CircleQueue, get_vm_mut, log_info, VM};
 
-const DEFAULT_MIN_SIGNAL: u32 = 10;
-const DEFAULT_MAX_SIGNAL: u32 = 100;
+const DEFAULT_MIN_SIGNAL: u32 = 100_000_000;
+const DEFAULT_MAX_SIGNAL: u32 = 500_000_000;
 
 const STATUS_CHECK_PERIOD: u32 = 100;
 
 pub const MAX_CODE_CACHE_ARRAY: u32 = 2048;
+
+pub const MAX_TRACE_DEEP: usize = 128;
 
 pub struct Profiler {
     sigprof: SignalProf,
@@ -85,6 +89,10 @@ impl Profiler {
         }
     }
 
+    pub fn find_library_by_address(&self, pc: *const i8) -> Option<&CodeCache> {
+        self.code_caches.iter().find(|cc| cc.contains(pc))
+    }
+
     pub fn push_trace(&mut self, trace: &JVMPICallTrace) {
         self.queue.push(trace);
     }
@@ -108,6 +116,18 @@ impl Profiler {
                 break;
             }
             self.sleep_peroid(1);
+        }
+    }
+
+    pub fn get_java_async_trace(&mut self, ucontext:  *mut libc::c_void) {
+        let vm = get_vm_mut();
+        let mut jvmti_trace = MaybeUninit::<JVMPICallTrace>::uninit();
+        let mut call_chan = [ptr::null(); MAX_TRACE_DEEP];
+        let mut java_ctx = StackContext::new();
+        unsafe {
+            StackWalker::walk_frame(ucontext as _, &mut call_chan, &mut java_ctx);
+            (vm.asgc())(jvmti_trace.as_mut_ptr(), MAX_TRACE_DEEP as _, ucontext);
+            self.push_trace(&*jvmti_trace.as_ptr());
         }
     }
 

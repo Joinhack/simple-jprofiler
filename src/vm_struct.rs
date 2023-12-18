@@ -1,14 +1,14 @@
 mod code_heap;
 mod nmethod;
-use nmethod::*;
-use code_heap::*;
-use std::{ffi::CStr, fmt::Display, ptr, mem};
+pub use code_heap::CodeHeap;
+pub use nmethod::NMethod;
+use std::{ffi::CStr, fmt::Display, ptr};
 
 use libc::uintptr_t;
 
 use crate::{code_cache::CodeCache, jvmti_native::jfieldID};
 
-pub(crate) struct VMStruct {
+pub struct VMStruct {
     klass_name_offset: i32,
     symbol_length_offset: i32,
     symbol_length_and_refcount_offset: i32,
@@ -221,6 +221,11 @@ impl VMStruct {
         }
     }
 
+    #[inline(always)]
+    pub fn code_heap(&self) -> CodeHeap<'_> {
+        CodeHeap::new(self)
+    }
+
     pub fn initial(&mut self, libjvm: Option<&'static CodeCache>) {
         self.libjvm = libjvm;
         unsafe {
@@ -430,6 +435,7 @@ impl VMStruct {
             self.code_heap_high = *self.code_heap_high_addr;
         }
         if !self.code_heap[0].is_null() && self.code_heap_segment_shift >= 0 {
+            // aquire the segment shift from heap
             self.code_heap_segment_shift = *(self.code_heap[0].add(self.code_heap_segment_shift as _) as *const i32);
         }
         if self.code_heap_memory_offset < 0 || self.code_heap_segmap_offset < 0 ||

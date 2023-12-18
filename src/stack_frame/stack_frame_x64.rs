@@ -91,7 +91,7 @@ impl StackFrameImpl {
     }
 
     #[inline(always)]
-    pub unsafe fn bp(&mut self) -> *mut uintptr_t {
+    pub unsafe fn fp(&mut self) -> *mut uintptr_t {
         reg!(self, bp)
     }
 

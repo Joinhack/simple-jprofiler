@@ -23,43 +23,43 @@ impl StackFrame {
     }
 
     #[inline(always)]
-    pub unsafe fn pc(&mut self) -> &mut uintptr_t {
-        &mut *self.inner.pc()
+    pub unsafe fn pc(&mut self) -> *mut uintptr_t {
+        self.inner.pc()
     }
 
     #[inline(always)]
-    pub unsafe fn sp(&mut self) -> &mut uintptr_t {
-        &mut *self.inner.sp()
+    pub unsafe fn sp(&mut self) -> *mut uintptr_t {
+        self.inner.sp()
     }
 
     #[inline(always)]
-    pub unsafe fn bp(&mut self) -> &mut uintptr_t {
-        &mut *self.inner.bp()
+    pub unsafe fn fp(&mut self) -> *mut uintptr_t {
+        self.inner.fp()
     }
 
     #[inline(always)]
-    pub unsafe fn retval(&mut self) -> &mut uintptr_t {
-        &mut *self.inner.retval()
+    pub unsafe fn retval(&mut self) -> *mut uintptr_t {
+        self.inner.retval()
     }
 
     #[inline(always)]
-    pub unsafe fn arg0(&mut self) -> &mut uintptr_t {
-        &mut *self.inner.arg0()
+    pub unsafe fn arg0(&mut self) -> *mut uintptr_t {
+        self.inner.arg0()
     }
 
     #[inline(always)]
-    pub unsafe fn arg1(&mut self) -> &mut uintptr_t {
-        &mut *self.inner.arg1()
+    pub unsafe fn arg1(&mut self) -> *mut uintptr_t {
+        self.inner.arg1()
     }
 
     #[inline(always)]
-    pub unsafe fn arg2(&mut self) -> &mut uintptr_t {
-        &mut *self.inner.arg2()
+    pub unsafe fn arg2(&mut self) -> *mut uintptr_t {
+        self.inner.arg2()
     }
 
     #[inline(always)]
-    pub unsafe fn arg3(&mut self) -> &mut uintptr_t {
-        &mut *self.inner.arg3()
+    pub unsafe fn arg3(&mut self) -> *mut uintptr_t {
+        self.inner.arg3()
     }
 
     #[inline(always)]

@@ -50,7 +50,7 @@ impl SignalProf {
 
     pub(crate) fn update_interval_by_val(&mut self, interval: u32) -> bool {
         let tv_sec = (interval as i64) / 1000_000_000;
-        let tv_usec = ((interval % 1000_000) as i32 % 1000) as _;
+        let tv_usec = ((interval % 1000_000_000) as i32 / 1000) as _;
         let it_interval = libc::timeval { tv_sec, tv_usec };
         let it_value = it_interval;
         let time: libc::itimerval = libc::itimerval {

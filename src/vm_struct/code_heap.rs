@@ -7,8 +7,13 @@ use super::{nmethod::NMethod, VMStruct};
 pub struct CodeHeap<'a>(&'a VMStruct);
 
 impl<'a> CodeHeap<'a> {
-    fn new(vmstruct: &'a VMStruct) -> Self {
+    #[inline(always)]
+    pub fn new(vmstruct: &'a VMStruct) -> Self {
         Self(vmstruct)
+    }
+
+    pub unsafe fn code_contains(&self, pc: *const i8) -> bool {
+        self.0.code_heap_low <= pc && pc  < self.0.code_heap_high 
     }
 
     unsafe fn contain(&self, heap: *const i8, pc: *const i8) -> bool {
@@ -25,7 +30,7 @@ impl<'a> CodeHeap<'a> {
         let heap_start = *(heap.add(start_off) as *const *const i8);
         let segmap_off = (self.0.code_heap_segmap_offset + self.0.vs_low_offset) as _;
         let segmap = *(heap.add(segmap_off) as *const *const i8);
-        let mut idx = (pc as isize - heap as isize) >> self.0.code_heap_segment_shift;
+        let mut idx = (pc.sub(heap_start as _)) as isize >> self.0.code_heap_segment_shift as isize;
         let mut seg = *segmap.offset(idx);
         if seg as u8 == 0xff {
             return  None;
@@ -37,7 +42,7 @@ impl<'a> CodeHeap<'a> {
         let block = heap_start.add((idx << self.0.code_heap_segment_shift) as usize);
         if (*block.add(mem::size_of::<isize>())) > 0 {
             let nmethod_addr = block.add(2 * mem::size_of::<isize>());
-            Some(NMethod::new(nmethod_addr))
+            Some(NMethod::new(nmethod_addr, self.0.nmethod_name_offset))
         } else {
             None
         }

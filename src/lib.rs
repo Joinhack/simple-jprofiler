@@ -6,6 +6,7 @@ mod r#macro;
 mod ctrl_svr;
 mod code_cache;
 mod stack_frame;
+mod stack_walker;
 mod circle_queue;
 mod jvmti_native;
 mod profiler;

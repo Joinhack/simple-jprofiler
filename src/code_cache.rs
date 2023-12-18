@@ -58,6 +58,11 @@ impl CodeBlob {
         Self { name, start, end }
     }
 
+    #[inline(always)]
+    pub fn name_str(&self) -> &str {
+        self.name.name_str()
+    }
+
     fn cmp(&self, other: &Self) -> Ordering {
         if self.start < other.start {
             Ordering::Less
@@ -146,6 +151,11 @@ impl CodeCache {
     }
 
     #[inline(always)]
+    pub fn code_blobs(&self) -> &[CodeBlob] {
+        &self.blobs
+    }
+
+    #[inline(always)]
     pub fn name_str(&self) -> &str {
         self.name.name_str()
     }
@@ -170,6 +180,25 @@ impl CodeCache {
         if self.max_address == NO_MAX_ADDRESS {
             self.max_address = self.blobs[self.blobs.len() - 1].end;
         }
+    }
+
+    pub fn binary_search(&self, addr: *const i8) -> Option<&CodeBlob> {
+        let low = match self.blobs.binary_search_by(|cb| {
+            if cb.end <= addr {
+                Ordering::Less
+            } else if cb.start > addr {
+                Ordering::Greater
+            } else {
+                Ordering::Equal
+            }
+        }) {
+            Ok(pos) => return self.blobs.get(pos),
+            Err(low) => low,
+        };
+        if low > 0 && self.blobs[low - 1].start == self.blobs[low - 1].end || self.blobs[low - 1].end == addr {
+            return self.blobs.get(low - 1);
+        }
+        None
     }
 
     #[inline(always)]
