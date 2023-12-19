@@ -67,9 +67,6 @@ impl StackWalker {
             if pc < MIN_VALID_PC as _ || pc > (-MIN_VALID_PC) as _ {
                 break;
             }
-            let code_cache = vm.profiler().find_library_by_address(pc as _);
-            let code_blob = code_cache.and_then(|cc| cc.binary_search(pc as _));
-            code_blob.map(|cb| println!("{}", cb.name_str()));
             fp = *(fp as *const uintptr_t);
         }
         deep

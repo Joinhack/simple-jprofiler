@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering;
 use std::{mem, ptr};
 use std::{sync::atomic::AtomicBool, time::Duration};
 
-use crate::code_cache::CodeCache;
+use crate::code_cache::{CodeCache, CodeBlob};
 use crate::jvmti::{JNIEnv, JVMTI_THREAD_NORM_PRIORITY};
 use crate::signal_prof::{SigactionFn, SignalProf};
 use crate::stack_walker::{StackWalker, StackContext};
@@ -89,10 +89,18 @@ impl Profiler {
         }
     }
 
+    #[inline(always)]
+    pub fn find_native_method(&self, pc: *const i8) ->Option<&CodeBlob> {
+        self.find_library_by_address(pc)
+            .and_then(|cc| cc.binary_search(pc))
+    }
+
+    #[inline(always)]
     pub fn find_library_by_address(&self, pc: *const i8) -> Option<&CodeCache> {
         self.code_caches.iter().find(|cc| cc.contains(pc))
     }
 
+    #[inline(always)]
     pub fn push_trace(&mut self, trace: &JVMPICallTrace) {
         self.queue.push(trace);
     }
