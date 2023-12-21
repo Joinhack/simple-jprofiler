@@ -1,4 +1,4 @@
-use crate::{jvmti::JNIEnv, jvmti_native::{jthread, jlong}, get_vm};
+use crate::{jvmti::JNIEnv, jvmti_native::jthread, get_vm};
 
 pub struct VMThread{
     inner: *const i8, 
@@ -28,9 +28,8 @@ impl VMThread {
     }
 
     #[inline(always)]
-    pub fn jthread_id(jni: &JNIEnv, thread: jthread) -> jlong {
-        let tid = get_vm().tid();
-        jni.get_long_field(thread, tid).unwrap()
+    pub fn jthread_id(jni: &JNIEnv, thread: jthread) -> u64 {
+        jni.get_long_field(thread, get_vm().tid()).unwrap() as _
     }
 
     #[inline(always)]
@@ -39,6 +38,7 @@ impl VMThread {
         *(osthread.offset(self.osthread_id_offset as _) as *const u32)
     }
 
+    #[inline(always)]
     pub unsafe fn native_thread_id(jni: &JNIEnv, jthread: jthread) -> Option<u32> {
         let vm = get_vm();
         if vm.has_native_thread_id() {

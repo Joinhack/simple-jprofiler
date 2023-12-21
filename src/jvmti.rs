@@ -82,6 +82,18 @@ impl JvmtiEnv {
         }
     }
 
+    pub fn deallocate(
+        &self,
+        p: *const i8
+    ) -> u32 {
+        unsafe {
+            (**self.0)
+                .Deallocate
+                .map(|d| d(self.0, p as _))
+                .unwrap()
+        }
+    }
+
     pub fn get_current_thread(
         &self,
         jthread: *mut jthread,
@@ -104,6 +116,19 @@ impl JvmtiEnv {
                 .SetEventNotificationMode
                 .map(|s| s(self.0, mode, event_type, event_thread))
         }
+    }
+
+    pub fn get_thread_info(
+        &self,
+        thr: jthread,
+        thread_info: *mut jvmtiThreadInfo
+    ) -> i32 {
+        unsafe { 
+            match (**self.0).GetThreadInfo.map(|g| g(self.0, thr, thread_info)) {
+                Some(o) => o as _,
+                _ => -1,
+            }
+         }
     }
 }
 
@@ -167,4 +192,6 @@ impl JNIEnv {
             (**self.0).GetLongField.map(|g| g(self.0, obj, field))
          }
     }
+
+    
 }

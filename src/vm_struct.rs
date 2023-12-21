@@ -2,6 +2,7 @@ mod code_heap;
 mod nmethod;
 mod vmthread;
 pub use code_heap::CodeHeap;
+pub use vmthread::VMThread;
 pub use nmethod::NMethod;
 use std::{ffi::CStr, fmt::Display, ptr};
 
@@ -14,8 +15,6 @@ use crate::{
     jvmti::JNIEnv, 
     c_str
 };
-
-use self::vmthread::VMThread;
 
 pub struct VMStruct {
     klass_name_offset: i32,
@@ -519,5 +518,10 @@ impl VMStruct {
     #[inline(always)]
     pub fn thread_env_offset(&self) ->  i32 {
         self.thread_env_offset
+    }
+
+    #[inline(always)]
+    pub fn nmethod_name_offset(&self) ->  i32 {
+        self.nmethod_name_offset
     }
 }

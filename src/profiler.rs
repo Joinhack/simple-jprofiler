@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ffi::CStr;
 use std::mem::MaybeUninit;
 use std::sync::Mutex;
 use std::sync::atomic::Ordering;
@@ -6,12 +7,13 @@ use std::{mem, ptr};
 use std::{sync::atomic::AtomicBool, time::Duration};
 
 use crate::code_cache::{CodeCache, CodeBlob};
-use crate::jvmti::{JNIEnv, JVMTI_THREAD_NORM_PRIORITY, JvmtiEnvPtr, JNIEnvPtr};
-use crate::jvmti_native::jthread;
+use crate::jvmti::{JNIEnv, JVMTI_THREAD_NORM_PRIORITY, JvmtiEnvPtr, JNIEnvPtr, JvmtiEnv, self};
+use crate::jvmti_native::{jthread, jvmtiThreadInfo};
 use crate::signal_prof::{SigactionFn, SignalProf};
 use crate::stack_walker::{StackWalker, StackContext};
 use crate::symbol_parser::SymbolParser;
 use crate::vm::JVMPICallTrace;
+use crate::vm_struct::VMThread;
 use crate::{c_str, log_error};
 use crate::{circle_queue::CircleQueue, get_vm_mut, log_info, VM};
 
@@ -169,12 +171,28 @@ impl Profiler {
         
     }
 
-    pub fn update_thread_info(&mut self, jvmti: JvmtiEnvPtr, jni: JNIEnvPtr, thread: jthread) {
-        
+    pub unsafe fn update_thread_info(&mut self, jvmti: JvmtiEnv, jni: JNIEnv, thread: jthread) {
+        VMThread::from_java_thread(&jni, thread).map(|vm_thr| {
+            let jthread_id = VMThread::jthread_id(&jni, thread);
+            let mut thr_info = MaybeUninit::<jvmtiThreadInfo>::uninit();
+            let os_tid = vm_thr.os_thread_id();
+            if os_tid > 0 {
+                let info_ptr = thr_info.as_mut_ptr();
+                if jvmti.get_thread_info(thread, info_ptr) == 0 {
+                    let thr_name = CStr::from_ptr((*info_ptr).name);
+                    let name = std::str::from_utf8_unchecked(thr_name.to_bytes()).into();
+                    self.set_thread_info(vm_thr.os_thread_id() as _, ThreadInfo { 
+                        jthread_id, 
+                        name,
+                    });
+                }
+            }
+        });
     }
 
-    pub fn set_thread_info(&mut self, nthrad_id:u64, thr_info: ThreadInfo) {
-        self.jthreads.get_mut().map(|jthreads| {
+    #[inline(always)]
+    fn set_thread_info(&mut self, nthrad_id:u64, thr_info: ThreadInfo) {
+        let _  = self.jthreads.get_mut().map(|jthreads| {
             jthreads.insert(nthrad_id, thr_info)
         });
     }

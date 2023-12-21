@@ -1,6 +1,6 @@
 use crate::ctrl_svr::CtrlSvr;
 use crate::jvmti::{JNIEnv, JNIEnvPtr, JavaVM, JvmtiEnv, JvmtiEnvPtr, JvmtiEventCallbacks};
-use crate::jvmti_native::{jint, jmethodID, jthread, JVMTI_ENABLE, JVMTI_EVENT_VM_INIT, jfieldID};
+use crate::jvmti_native::{jint, jmethodID, jthread, JVMTI_ENABLE, JVMTI_EVENT_VM_INIT, jfieldID, JVMTI_EVENT_THREAD_START, JVMTI_EVENT_THREAD_END};
 use crate::profiler::Profiler;
 use crate::vm_struct::{VMStruct, CodeHeap};
 use crate::{c_str, check_null, get_vm_mut, jni_method, log_error, MaybeUninitTake};
@@ -106,6 +106,7 @@ impl VM {
         let mut jvmti_callback: JvmtiEventCallbacks = unsafe { std::mem::zeroed() };
         jvmti_callback.VMInit = Some(Self::vm_init);
         jvmti_callback.ThreadStart = Some(Self::jvm_thread_start);
+        jvmti_callback.ThreadEnd = Some(Self::jvm_thread_end);
         self.jvmti
             .set_event_callbacks(
                 &jvmti_callback,
@@ -115,10 +116,20 @@ impl VM {
         self.jvmti
             .set_event_notification_mode(JVMTI_ENABLE, JVMTI_EVENT_VM_INIT, ptr::null_mut())
             .unwrap();
+        self.jvmti
+            .set_event_notification_mode(JVMTI_ENABLE, JVMTI_EVENT_THREAD_START, ptr::null_mut())
+            .unwrap();
+        self.jvmti
+            .set_event_notification_mode(JVMTI_ENABLE, JVMTI_EVENT_THREAD_END, ptr::null_mut())
+            .unwrap();
     }
 
-    extern "C" fn jvm_thread_start(jvmti: JvmtiEnvPtr, jni: JNIEnvPtr, thread: jthread) {
-        get_vm_mut().profiler_mut().update_thread_info(jvmti, jni, thread);
+    unsafe extern "C" fn jvm_thread_start(jvmti: JvmtiEnvPtr, jni: JNIEnvPtr, thread: jthread) {
+        get_vm_mut().profiler_mut().update_thread_info(jvmti.into(), jni.into(), thread);
+    }
+
+    unsafe extern "C" fn jvm_thread_end(jvmti: JvmtiEnvPtr, jni: JNIEnvPtr, thread: jthread) {
+        get_vm_mut().profiler_mut().update_thread_info(jvmti.into(), jni.into(), thread);
     }
 
     extern "C" fn vm_init(_jvmti: JvmtiEnvPtr, jni: JNIEnvPtr, _jthr: jthread) {
@@ -274,5 +285,10 @@ impl VM {
     #[inline(always)]
     pub fn thread_env_offset(&self) -> i32 {
         self.vm_struct.thread_env_offset()
+    }
+
+    #[inline(always)]
+    pub fn nmethod_name_offset(&self) -> i32 {
+        self.vm_struct.nmethod_name_offset()
     }
 }
