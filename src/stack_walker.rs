@@ -34,10 +34,10 @@ impl StackContext {
 pub struct StackWalker;
 
 impl StackWalker {
-    pub unsafe fn walk_frame(
+    pub unsafe fn walk_frame<'a>(
         ucontext: *const (), 
-        call_chan:&mut [*const ()], 
-        java_ctx: &mut StackContext) -> usize {
+        call_chan:&'a mut [*const ()], 
+        java_ctx: &mut StackContext) -> &'a [*const ()] {
         let sp = 0;
         let bottom = (&sp as *const _ as uintptr_t) + MAX_WALK_SIZE;
         let mut frame = StackFrame::new(ucontext as _);
@@ -69,6 +69,6 @@ impl StackWalker {
             }
             fp = *(fp as *const uintptr_t);
         }
-        deep
+        &call_chan[0..deep]
     }
 }

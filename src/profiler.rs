@@ -1,10 +1,13 @@
+use std::collections::HashMap;
 use std::mem::MaybeUninit;
+use std::sync::Mutex;
 use std::sync::atomic::Ordering;
 use std::{mem, ptr};
 use std::{sync::atomic::AtomicBool, time::Duration};
 
 use crate::code_cache::{CodeCache, CodeBlob};
-use crate::jvmti::{JNIEnv, JVMTI_THREAD_NORM_PRIORITY};
+use crate::jvmti::{JNIEnv, JVMTI_THREAD_NORM_PRIORITY, JvmtiEnvPtr, JNIEnvPtr};
+use crate::jvmti_native::jthread;
 use crate::signal_prof::{SigactionFn, SignalProf};
 use crate::stack_walker::{StackWalker, StackContext};
 use crate::symbol_parser::SymbolParser;
@@ -19,13 +22,22 @@ const STATUS_CHECK_PERIOD: u32 = 100;
 
 pub const MAX_CODE_CACHE_ARRAY: u32 = 2048;
 
+const CONCURRENCY_LEVEL: usize = 16;
+
 pub const MAX_TRACE_DEEP: usize = 128;
+
+struct ThreadInfo {
+    jthread_id: u64,
+    name: String,
+}
 
 pub struct Profiler {
     sigprof: SignalProf,
     running: AtomicBool,
     queue: CircleQueue,
+    calltrace_buffer: Vec<Vec<JVMPICallTrace>>,
     code_caches: Vec<CodeCache>,
+    jthreads: Mutex<HashMap<u64, ThreadInfo>>,
 }
 
 impl Profiler {
@@ -33,11 +45,16 @@ impl Profiler {
         let sigprof = SignalProf::new(DEFAULT_MIN_SIGNAL, DEFAULT_MAX_SIGNAL);
         let running = AtomicBool::new(false);
         let queue = CircleQueue::new();
+        let mut calltrace_buffer = Vec::new();
+        (0..CONCURRENCY_LEVEL)
+            .for_each(|_| calltrace_buffer.push(Vec::new()));
         Self {
             queue,
             sigprof,
             running,
+            calltrace_buffer,
             code_caches: Vec::new(),
+            jthreads: Mutex::new(HashMap::new()),
         }
     }
 
@@ -133,10 +150,33 @@ impl Profiler {
         let mut call_chan = [ptr::null(); MAX_TRACE_DEEP];
         let mut java_ctx = StackContext::new();
         unsafe {
-            StackWalker::walk_frame(ucontext as _, &mut call_chan, &mut java_ctx);
+            let valid_chan = StackWalker::walk_frame(ucontext as _, &mut call_chan, &mut java_ctx);
+            self.convert_native_trace(valid_chan);
             (vm.asgc())(jvmti_trace.as_mut_ptr(), MAX_TRACE_DEEP as _, ucontext);
             self.push_trace(&*jvmti_trace.as_ptr());
         }
+    }
+
+    fn get_lock_index(&self, tid: u64) -> u32 {
+        let mut tid = tid;
+        tid ^= tid >> 8;
+        tid ^= tid >> 4;
+        (tid as usize % CONCURRENCY_LEVEL) as u32
+
+    }
+
+    fn convert_native_trace(&mut self, call_chan: &[*const ()]) {
+        
+    }
+
+    pub fn update_thread_info(&mut self, jvmti: JvmtiEnvPtr, jni: JNIEnvPtr, thread: jthread) {
+        
+    }
+
+    pub fn set_thread_info(&mut self, nthrad_id:u64, thr_info: ThreadInfo) {
+        self.jthreads.get_mut().map(|jthreads| {
+            jthreads.insert(nthrad_id, thr_info)
+        });
     }
 
     #[inline]

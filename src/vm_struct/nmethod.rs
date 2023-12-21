@@ -1,6 +1,5 @@
 use std::ffi::CStr;
 
-
 pub struct NMethod{
     inner: *const i8,
     nmethod_name_offset: i32,

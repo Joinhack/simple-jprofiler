@@ -82,6 +82,17 @@ impl JvmtiEnv {
         }
     }
 
+    pub fn get_current_thread(
+        &self,
+        jthread: *mut jthread,
+    ) -> Option<u32> {
+        unsafe {
+            (**self.0)
+                .GetCurrentThread
+                .map(|g| g(self.0, jthread as _))
+        }
+    }
+
     pub fn set_event_notification_mode(
         &self,
         mode: u32,
@@ -101,7 +112,7 @@ pub struct JNIEnv(JNIEnvPtr);
 
 impl JNIEnv {
     #[inline(always)]
-    pub(crate) fn inner(&self) -> *mut jvmti_native::JNIEnv {
+    pub(crate) fn inner(&self) -> JNIEnvPtr {
         self.0
     }
 
@@ -122,5 +133,38 @@ impl JNIEnv {
         sig: *const c_char,
     ) -> Option<jmethodID> {
         unsafe { check_null!((**self.0).GetMethodID.map(|f| f(self.0, clz, name, sig))) }
+    }
+
+    #[inline(always)]
+    pub fn get_class_object(
+        &self,
+        obj: jobject,
+    ) -> Option<jclass> {
+        unsafe { 
+            check_null!((**self.0).GetObjectClass.map(|g| g(self.0, obj)))
+         }
+    }
+
+    #[inline(always)]
+    pub fn get_field_id(
+        &self,
+        obj: jclass,
+        name: *const i8,
+        sig: *const i8,
+    ) -> Option<jfieldID> {
+        unsafe { 
+            check_null!((**self.0).GetFieldID.map(|g| g(self.0, obj, name, sig)))
+         }
+    }
+
+    #[inline(always)]
+    pub fn get_long_field(
+        &self,
+        obj: jobject,
+        field: jfieldID,
+    ) -> Option<jlong> {
+        unsafe { 
+            (**self.0).GetLongField.map(|g| g(self.0, obj, field))
+         }
     }
 }

@@ -1,7 +1,5 @@
 use std::mem;
 
-use crate::get_vm;
-
 use super::{nmethod::NMethod, VMStruct};
 
 pub struct CodeHeap<'a>(&'a VMStruct);

@@ -1,12 +1,21 @@
 mod code_heap;
 mod nmethod;
+mod vmthread;
 pub use code_heap::CodeHeap;
 pub use nmethod::NMethod;
 use std::{ffi::CStr, fmt::Display, ptr};
 
 use libc::uintptr_t;
 
-use crate::{code_cache::CodeCache, jvmti_native::jfieldID};
+use crate::{
+    code_cache::CodeCache, 
+    jvmti_native::{jfieldID, jthread}, 
+    get_vm_mut, 
+    jvmti::JNIEnv, 
+    c_str
+};
+
+use self::vmthread::VMThread;
 
 pub struct VMStruct {
     klass_name_offset: i32,
@@ -29,6 +38,7 @@ pub struct VMStruct {
     class_loader_data_next_offset: i32,
     klass_offset_addr: *const i32,
     thread_osthread_offset: i32,
+    thread_env_offset: i32,
     thread_anchor_offset: i32,
     thread_state_offset: i32,
     osthread_id_offset: i32,
@@ -45,7 +55,7 @@ pub struct VMStruct {
     code_heap_segmap_offset: i32,
     code_heap_segment_shift: i32,
     vs_low_bound_offset: i32,
-    code_heap: [*const i8;3],
+    code_heap: [*const i8; 3],
     vs_high_bound_offset: i32,
     vs_low_offset: i32,
     vs_high_offset: i32,
@@ -57,8 +67,11 @@ pub struct VMStruct {
     libjvm: Option<&'static CodeCache>,
     has_perm: bool,
     klass: jfieldID,
+    tid: jfieldID,
+    eetop: jfieldID,
     has_class_names: bool,
     has_method_structs: bool,
+    has_native_thread_id: bool,
 }
 
 impl Display for VMStruct {
@@ -213,12 +226,36 @@ impl VMStruct {
             flag_count: -1,
             libjvm: None,
             klass: ptr::null_mut(),
+            tid: ptr::null_mut(),
+            eetop: ptr::null_mut(),
             has_class_names: false,
             code_heap:[ptr::null(); 3],
             has_method_structs: false,
             code_heap_low: ptr::null(),
             code_heap_high: ptr::null(),
+            has_native_thread_id: false,
+            thread_env_offset: -1,
         }
+    }
+
+    #[inline(always)]
+    pub fn eetop(&self) -> jfieldID {
+        self.eetop
+    }
+
+    #[inline(always)]
+    pub fn tid(&self) -> jfieldID {
+        self.tid
+    }
+
+    #[inline(always)]
+    pub fn thread_osthread_offset(&self) -> i32 {
+        self.thread_osthread_offset
+    }
+
+    #[inline(always)]
+    pub fn osthread_id_offset(&self) -> i32 {
+        self.osthread_id_offset
     }
 
     #[inline(always)]
@@ -232,6 +269,33 @@ impl VMStruct {
             self.initial_offset();
         }
     }
+
+    unsafe fn resovle_thread(&mut self, jni: &JNIEnv) {
+        let mut thread: jthread = ptr::null_mut();
+        match get_vm_mut()
+            .jvmti()
+            .get_current_thread(&mut thread as _) {
+                Some(s) if s == 0  => {},
+                _ => return,
+        };
+        let thr_class = jni.get_class_object(thread).unwrap();
+        self.tid = match jni.get_field_id(thr_class, c_str!("tid"), c_str!("J")) {
+            Some(f) => f,
+            None => return,
+        };
+        self.eetop = match jni.get_field_id(thr_class, c_str!("eetop"), c_str!("J")) {
+            Some(f) => f,
+            None => return,
+        };
+
+        let vm_thread = VMThread::from_java_thread(jni, thread);
+        if let Some(vm_thread) = vm_thread {
+            self.thread_env_offset = (jni.inner() as *const i8).offset_from(vm_thread.inner()) as _;
+            self.has_native_thread_id = self.thread_osthread_offset > 0 && self.osthread_id_offset > 0;
+        }
+        
+    }
+
 
     /// get the offset of the symbols
     unsafe fn initial_offset(&mut self) {
@@ -253,11 +317,6 @@ impl VMStruct {
         macro_rules! asign_offset {
             ($p : expr) => {
                 $p = *((entry + offset_off) as *const i32)
-            };
-        }
-        macro_rules! asign_addr_offset {
-            ($p : expr) => {
-                $p = *((entry + addr_off) as *const i32)
             };
         }
         loop {
@@ -399,6 +458,9 @@ impl VMStruct {
     pub fn ready(&mut self) {
         unsafe {
             self.resovle_offset();
+            get_vm_mut().get_jni_env().map(|jni| {
+                self.resovle_thread(&jni);
+            });
         }
     } 
 
@@ -447,5 +509,15 @@ impl VMStruct {
     #[inline(always)]
     pub fn has_method_structs(&self) ->  bool {
         self.has_method_structs
+    }
+
+    #[inline(always)]
+    pub fn has_native_thread_id(&self) ->  bool {
+        self.has_native_thread_id
+    }
+
+    #[inline(always)]
+    pub fn thread_env_offset(&self) ->  i32 {
+        self.thread_env_offset
     }
 }

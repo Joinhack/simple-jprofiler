@@ -1,6 +1,6 @@
 use crate::ctrl_svr::CtrlSvr;
 use crate::jvmti::{JNIEnv, JNIEnvPtr, JavaVM, JvmtiEnv, JvmtiEnvPtr, JvmtiEventCallbacks};
-use crate::jvmti_native::{jint, jmethodID, jthread, JVMTI_ENABLE, JVMTI_EVENT_VM_INIT};
+use crate::jvmti_native::{jint, jmethodID, jthread, JVMTI_ENABLE, JVMTI_EVENT_VM_INIT, jfieldID};
 use crate::profiler::Profiler;
 use crate::vm_struct::{VMStruct, CodeHeap};
 use crate::{c_str, check_null, get_vm_mut, jni_method, log_error, MaybeUninitTake};
@@ -11,6 +11,10 @@ pub const JNI_VERSION_1_6: i32 = 0x00010006;
 pub const JNI_EDETACHED: i32 = -2;
 pub const JNI_EVERSION: i32 = -3;
 pub const DEFAUTLT_CTRL_PORT: u32 = 5000;
+
+pub const MAX_NATIVE_FRAMES: usize = 128;
+pub const RESERVED_FRAMES: usize   = 4;
+
 
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -47,6 +51,10 @@ impl Default for JVMPICallTrace {
             frames: ptr::null_mut(),
         }
     }
+}
+
+pub struct CallTraceBuff {
+
 }
 
 type AsgcType = unsafe extern "C" fn(*mut JVMPICallTrace, jint, *const libc::c_void);
@@ -97,6 +105,7 @@ impl VM {
         self.profiler.set_signal_action(Self::prof_signal_handle);
         let mut jvmti_callback: JvmtiEventCallbacks = unsafe { std::mem::zeroed() };
         jvmti_callback.VMInit = Some(Self::vm_init);
+        jvmti_callback.ThreadStart = Some(Self::jvm_thread_start);
         self.jvmti
             .set_event_callbacks(
                 &jvmti_callback,
@@ -106,6 +115,10 @@ impl VM {
         self.jvmti
             .set_event_notification_mode(JVMTI_ENABLE, JVMTI_EVENT_VM_INIT, ptr::null_mut())
             .unwrap();
+    }
+
+    extern "C" fn jvm_thread_start(jvmti: JvmtiEnvPtr, jni: JNIEnvPtr, thread: jthread) {
+        get_vm_mut().profiler_mut().update_thread_info(jvmti, jni, thread);
     }
 
     extern "C" fn vm_init(_jvmti: JvmtiEnvPtr, jni: JNIEnvPtr, _jthr: jthread) {
@@ -195,6 +208,7 @@ impl VM {
                 .FindClass
                 .map(|f| f(jni.inner(), c_str!("java/lang/Thread")))
         };
+
         let jthr_clz = match jni.find_class(c_str!("java/lang/Thread")) {
             None => {
                 log_error!("ERROR: find thread class error");
@@ -202,6 +216,7 @@ impl VM {
             }
             Some(c) => c,
         };
+
         let init_mid = match jni.get_method_id(jthr_clz, c_str!("<init>"), c_str!("()V")) {
             None => {
                 log_error!("ERROR: get method id class error");
@@ -209,6 +224,7 @@ impl VM {
             }
             Some(c) => c,
         };
+
         let jthr = match jni_method!(jni, NewObject, jthr_clz, init_mid) {
             None => return None,
             Some(obj) => obj,
@@ -228,5 +244,35 @@ impl VM {
     #[inline(always)]
     pub fn code_heap(&self) -> CodeHeap {
         self.vm_struct.code_heap()
+    }
+
+    #[inline(always)]
+    pub fn eetop(&self) -> jfieldID {
+        self.vm_struct.eetop()
+    }
+
+    #[inline(always)]
+    pub fn tid(&self) -> jfieldID {
+        self.vm_struct.tid()
+    }
+
+    #[inline(always)]
+    pub fn thread_osthread_offset(&self) -> i32 {
+        self.vm_struct.thread_osthread_offset()
+    }
+
+    #[inline(always)]
+    pub fn osthread_id_offset(&self) -> i32 {
+        self.vm_struct.osthread_id_offset()
+    }
+
+    #[inline(always)]
+    pub fn has_native_thread_id(&self) -> bool {
+        self.vm_struct.has_native_thread_id()
+    }
+
+    #[inline(always)]
+    pub fn thread_env_offset(&self) -> i32 {
+        self.vm_struct.thread_env_offset()
     }
 }
