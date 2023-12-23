@@ -1,9 +1,10 @@
-use std::{ptr, mem};
+use std::{ptr, mem, arch::asm};
 
 pub struct OSImpl;
 
 extern "C" {
     fn mach_port_deallocate(_: libc::c_uint, _: u32) -> libc::c_int;
+    fn native_send_thread_signal(tid:u32, signal: u32) -> u32;
 }
 
 impl OSImpl {
@@ -12,6 +13,12 @@ impl OSImpl {
             let port = libc::mach_thread_self();
             mach_port_deallocate(libc::mach_task_self(), port);
             port as _
+        }
+    }
+
+    pub fn send_thread_alarm(tid: u32, alarm:u32) -> bool {
+        unsafe {
+            native_send_thread_signal(tid, alarm) == 0
         }
     }
 }

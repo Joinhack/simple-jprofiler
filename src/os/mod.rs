@@ -29,6 +29,11 @@ impl OSThreadList {
 }
 
 impl OS {
+    pub fn send_thread_alarm(tid: u32, alarm:u32) {
+        OSImpl::send_thread_alarm(tid, alarm);
+    }
+
+    #[inline(always)]
     pub fn thread_id() -> u64 {
         OSImpl::thread_id()
     }

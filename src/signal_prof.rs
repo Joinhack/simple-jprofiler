@@ -38,7 +38,7 @@ impl SignalProf {
         sa.sa_flags = (libc::SA_RESTART | libc::SA_SIGINFO) as _;
         sa.sa_sigaction = sfn as _;
         //sa.sa_mask set zero by init.
-        unsafe { libc::sigaction(libc::SIGPROF, sa, old_sa_uninit.as_mut_ptr()) == 0 }
+        unsafe { libc::sigaction(libc::SIGALRM, sa, old_sa_uninit.as_mut_ptr()) == 0 }
     }
 
     pub fn update_interval(&mut self) -> bool {
