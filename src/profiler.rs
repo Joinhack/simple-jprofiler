@@ -102,7 +102,6 @@ impl Profiler {
 
     pub fn stop(&mut self) {
         log_info!("INFO: profiler stop.");
-        self.sigprof.update_interval_by_val(0);
         self.walker_trace.stop();
         self.running.store(false, Ordering::Release);
     }
@@ -170,12 +169,15 @@ impl Profiler {
     }
 
     fn convert_native_trace(&mut self, call_chan: &[*const ()], idx: usize) {
+        let mut prev_call = ptr::null();
         let call_trace = call_chan.iter().filter_map(|cc| {
             let nm = self.find_native_method(*cc as _);
             nm.map(|nm| {
+                let name_ptr = nm.name_ptr();
+                prev_call = name_ptr;
                 JVMPICallFrame {
                     bci: ASGCTCallFrameType::BCINativeFrame.into(),
-                    method_id: nm.name_ptr() as _
+                    method_id: name_ptr as _
                 }
             })
         }).collect::<Vec<_>>();
