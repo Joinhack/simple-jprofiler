@@ -170,22 +170,19 @@ impl Profiler {
     }
 
     fn convert_native_trace(&mut self, call_chan: &[*const ()], idx: usize) {
-        let mut call_trace = call_chan.iter().filter_map(|cc| {
+        let call_trace = call_chan.iter().filter_map(|cc| {
             let nm = self.find_native_method(*cc as _);
             nm.map(|nm| {
-                println!("{}", nm.name_str());
                 JVMPICallFrame {
                     bci: ASGCTCallFrameType::BCINativeFrame.into(),
                     method_id: nm.name_ptr() as _
                 }
             })
         }).collect::<Vec<_>>();
-        self.calltrace_buffer
+        let buf = self.calltrace_buffer
             .get_mut(idx)
-            .map(|buf| {
-                buf.truncate(0);
-                buf.append(&mut call_trace);
-            });
+            .expect("get idx calltrace buffer fail");
+        *buf = call_trace;
     }
 
     pub unsafe fn update_thread_info(&mut self, jvmti: JvmtiEnv, jni: JNIEnv, thread: jthread) {
