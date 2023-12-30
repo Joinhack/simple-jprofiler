@@ -1,4 +1,6 @@
-use std::{ptr, mem, arch::asm};
+use std::{ptr, mem::{self, MaybeUninit}, arch::asm};
+
+use super::ThreadState;
 
 pub struct OSImpl;
 
@@ -8,11 +10,11 @@ extern "C" {
 }
 
 impl OSImpl {
-    pub fn thread_id() -> u64 {
+    pub fn thread_id() -> u32 {
         unsafe {
             let port = libc::mach_thread_self();
             mach_port_deallocate(libc::mach_task_self(), port);
-            port as _
+            port
         }
     }
 
@@ -21,6 +23,24 @@ impl OSImpl {
             native_send_thread_signal(tid, alarm) == 0
         }
     }
+
+    pub unsafe fn thread_state(tid: u32) -> ThreadState {
+        let mut info = MaybeUninit::<libc::thread_basic_info>::uninit();
+        let mut info_size = mem::size_of::<libc::thread_basic_info>();
+        if libc::thread_info(
+            tid as _, 
+            libc::THREAD_BASIC_INFO as _, 
+            info.as_mut_ptr() as _, 
+            &mut info_size as *mut _ as _
+        ) != 0 {
+            return ThreadState::Invalid;
+        }
+        if (*info.as_ptr()).run_state == libc::TH_STATE_RUNNING {
+            ThreadState::Running
+        } else {
+            ThreadState::Sleeping
+        }
+    } 
 }
 
 #[allow(non_camel_case_types)]
@@ -33,15 +53,23 @@ pub struct OSThreadListImpl {
     thread_index: usize,
 }
 
+impl Drop for OSThreadListImpl {
+    fn drop(&mut self) {
+        
+    }
+}
+
 impl OSThreadListImpl {
     pub fn new() -> Self {
+        let task = unsafe {libc::mach_task_self()};
         Self {
-            task: 0,
+            task,
             thread_array: None,
             thread_count: 0,
             thread_index: 0,
         }
     }
+
     fn ensure_thread_array(&mut self) {
         if self.thread_array.is_none() {
             self.thread_count = 0;

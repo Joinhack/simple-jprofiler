@@ -7,6 +7,12 @@ mod os_linux;
 #[cfg(target_os = "linux")]
 use os_linux::*;
 
+pub enum ThreadState {
+    Invalid,
+    Running,
+    Sleeping,
+}
+
 pub struct OS;
 
 pub struct OSThreadList(OSThreadListImpl);
@@ -34,7 +40,13 @@ impl OS {
     }
 
     #[inline(always)]
-    pub fn thread_id() -> u64 {
+    pub fn thread_id() -> u32 {
         OSImpl::thread_id()
+    }
+
+    pub fn thread_state(tid: u32) -> ThreadState {
+        unsafe {
+            OSImpl::thread_state(tid)
+        }
     }
 }

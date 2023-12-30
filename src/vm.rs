@@ -1,6 +1,8 @@
 use crate::ctrl_svr::CtrlSvr;
 use crate::jvmti::{JNIEnv, JNIEnvPtr, JavaVM, JvmtiEnv, JvmtiEnvPtr, JvmtiEventCallbacks};
-use crate::jvmti_native::{jint, jmethodID, jthread, JVMTI_ENABLE, JVMTI_EVENT_VM_INIT, jfieldID, JVMTI_EVENT_THREAD_START, JVMTI_EVENT_THREAD_END};
+use crate::jvmti_native::{
+    jint, jmethodID, jthread, JVMTI_ENABLE, JVMTI_EVENT_VM_INIT, jfieldID, JVMTI_EVENT_THREAD_START, JVMTI_EVENT_THREAD_END
+};
 use crate::profiler::Profiler;
 use crate::vm_struct::{VMStruct, CodeHeap};
 use crate::{c_str, check_null, get_vm_mut, jni_method, log_error, MaybeUninitTake};
@@ -16,17 +18,45 @@ pub const MAX_NATIVE_FRAMES: usize = 128;
 pub const RESERVED_FRAMES: usize   = 4;
 
 
+pub enum ASGCTCallFrameType {
+    BCINativeFrame,
+    BICAlloc,
+    BCIAllocOutsideTlab,
+    BCILiveObject,
+    BCILock,
+    BCIPark,
+    BCIThreadId,
+    BCIError,
+    BCIInstrument,
+}
+
+impl Into<jint> for ASGCTCallFrameType {
+    fn into(self) -> jint {
+        match self {
+            ASGCTCallFrameType::BCINativeFrame => -10,
+            ASGCTCallFrameType::BICAlloc => -11,
+            ASGCTCallFrameType::BCIAllocOutsideTlab => -12,
+            ASGCTCallFrameType::BCILiveObject => -13,
+            ASGCTCallFrameType::BCILock => -14,
+            ASGCTCallFrameType::BCIPark => -15,
+            ASGCTCallFrameType::BCIThreadId => -16,
+            ASGCTCallFrameType::BCIError => -17,
+            ASGCTCallFrameType::BCIInstrument => -18,
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct JVMPICallFrame {
-    pub lineno: jint,
+    pub bci: jint,
     pub method_id: jmethodID,
 }
 
 impl Default for JVMPICallFrame {
     fn default() -> Self {
         Self {
-            lineno: 0,
+            bci: 0,
             method_id: ptr::null_mut(),
         }
     }

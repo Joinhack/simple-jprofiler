@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::ffi::CStr;
 use std::ptr;
+use std::rc::Rc;
 
 const NO_MIN_ADDRESS: *const i8 = -1 as _;
 const NO_MAX_ADDRESS: *const i8 = 0 as _;
@@ -42,15 +43,20 @@ impl NativeFunc {
     }
 
     #[inline(always)]
+    pub fn name_ptr(&self) -> *const u8 {
+        self.name.as_ptr()
+    }
+
+    #[inline(always)]
     pub fn name_mut(&mut self) -> &mut [u8] {
         &mut self.name
     }
 }
 
 pub struct CodeBlob {
-    pub(crate) name: NativeFunc,
-    pub(crate) start: *const i8,
-    pub(crate) end: *const i8,
+    name: NativeFunc,
+    start: *const i8,
+    end: *const i8,
 }
 
 impl CodeBlob {
@@ -61,6 +67,11 @@ impl CodeBlob {
     #[inline(always)]
     pub fn name_str(&self) -> &str {
         self.name.name_str()
+    }
+
+    #[inline(always)]
+    pub fn name_ptr(&self) -> *const u8 {
+        self.name.name_ptr()
     }
 
     fn cmp(&self, other: &Self) -> Ordering {
