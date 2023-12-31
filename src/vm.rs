@@ -1,4 +1,3 @@
-use crate::code_cache::NativeFunc;
 use crate::ctrl_svr::CtrlSvr;
 use crate::jvmti::{JNIEnv, JNIEnvPtr, JavaVM, JvmtiEnv, JvmtiEnvPtr, JvmtiEventCallbacks};
 use crate::jvmti_native::{
@@ -7,7 +6,6 @@ use crate::jvmti_native::{
 use crate::profiler::Profiler;
 use crate::vm_struct::{VMStruct, CodeHeap};
 use crate::{c_str, check_null, get_vm_mut, jni_method, log_error};
-use std::ffi::CStr;
 use std::mem::{self, MaybeUninit};
 use std::ptr;
 

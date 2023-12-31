@@ -173,12 +173,17 @@ impl Profiler {
         self.locks.get(lock_idx).map(|l| {
             l.try_lock()
         });
-        let mut jvmti_trace = JVMPICallTrace::new(vm.get_jni_env().unwrap().inner());
+        
         let mut call_chan = [ptr::null(); MAX_TRACE_DEEP];
         let mut java_ctx = StackContext::new();
         unsafe {
             let chan = StackWalker::walk_frame(ucontext as _, &mut call_chan, &mut java_ctx);
             self.convert_native_trace(chan, lock_idx);
+            let jni = vm.get_jni_env();
+            if jni.is_none() {
+                return;
+            }
+            let mut jvmti_trace = JVMPICallTrace::new(jni.unwrap().inner());
             (vm.asgc())(&mut jvmti_trace as _, MAX_TRACE_DEEP as _, ucontext);
             println!("{}", jvmti_trace.num_frames);
             //self.push_trace(&*jvmti_trace.as_ptr());

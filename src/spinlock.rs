@@ -8,19 +8,18 @@ impl SpinLock {
         Self(AtomicBool::new(false))
     }
 
+    #[inline(always)]
     pub fn try_lock(&self) -> bool {
-        match self.0.compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed) {
-            Ok(_) => true,
-            Err(_) => false,
-        }
+        self.0.compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed).is_ok()
     }
 
+    #[inline(always)]
     pub fn lock(&self) -> Option<LockGuard> {
-        while let Ok(_) = self.0.compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed) {
-        }
+        while !self.try_lock() {}
         Some(LockGuard::new(self))
     }
 
+    #[inline(always)]
     pub fn try_lock_with_guard(&self) -> Option<LockGuard> {
         if self.try_lock() {
             Some(LockGuard::new(self))
@@ -30,8 +29,7 @@ impl SpinLock {
     }
 
     pub fn unlock(&self) {
-        while let Ok(_) = self.0.compare_exchange_weak(true, false, Ordering::Acquire, Ordering::Relaxed) {
-        }
+        self.0.store(false, Ordering::Release);
     }
 }
 
