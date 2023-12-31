@@ -38,6 +38,17 @@ macro_rules! check_null {
 }
 
 #[macro_export]
+macro_rules! cstr_2_str {
+    ($e: expr) => {
+        unsafe {
+            let cs = CStr::from_ptr($e);
+            let bs = cs.to_bytes();
+            std::str::from_utf8_unchecked(bs)
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! jni_method {
     ($jni: ident, $method: tt, $($expr: expr),+) => {
         unsafe {

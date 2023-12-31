@@ -1,4 +1,4 @@
-use std::{ptr, mem::{self, MaybeUninit}, arch::asm};
+use std::{ptr, mem::{self, MaybeUninit}};
 
 use super::ThreadState;
 
@@ -55,7 +55,7 @@ pub struct OSThreadListImpl {
 
 impl Drop for OSThreadListImpl {
     fn drop(&mut self) {
-        
+        self.rewind();
     }
 }
 

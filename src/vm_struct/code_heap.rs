@@ -1,4 +1,4 @@
-use std::mem;
+use std::{mem, sync::atomic::Ordering};
 
 use super::{nmethod::NMethod, VMStruct};
 
@@ -11,7 +11,8 @@ impl<'a> CodeHeap<'a> {
     }
 
     pub unsafe fn code_contains(&self, pc: *const i8) -> bool {
-        self.0.code_heap_low <= pc && pc  < self.0.code_heap_high 
+        self.0.code_heap_low.load(Ordering::Acquire) <= pc as _ 
+            && pc  < self.0.code_heap_high.load(Ordering::Acquire) 
     }
 
     unsafe fn contain(&self, heap: *const i8, pc: *const i8) -> bool {

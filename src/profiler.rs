@@ -6,6 +6,7 @@ use std::sync::atomic::Ordering;
 use std::{mem, ptr};
 use std::{sync::atomic::AtomicBool, time::Duration};
 
+use crate::cstr_2_str;
 use crate::{c_str, code_cache::{CodeCache, CodeBlob}};
 use crate::jvmti::{
     JNIEnv, JVMTI_THREAD_NORM_PRIORITY, JvmtiEnv
@@ -45,6 +46,10 @@ pub struct Profiler {
     code_caches: Vec<CodeCache>,
     walker_trace: WalkerTrace,
     locks: Vec<SpinLock>,
+    stub_lock: SpinLock,
+    runtime_stub: CodeCache,
+    call_stub_begin: *const i8,
+    call_stub_end: *const i8,
     jthreads: Mutex<HashMap<u64, ThreadInfo>>,
 }
 
@@ -60,14 +65,19 @@ impl Profiler {
         let locks = (0..CONCURRENCY_LEVEL)
             .map(|_| SpinLock::new())
             .collect();
+        let runtime_stub = CodeCache::new(c_str!("[stubs]"), -1 as _);
         Self {
             locks,
             queue,
             sigprof,
             running,
             walker_trace,
+            runtime_stub,
+            call_stub_begin: ptr::null(),
+            call_stub_end: ptr::null(),
             calltrace_buffer,
             code_caches: Vec::new(),
+            stub_lock: SpinLock::new(),
             jthreads: Mutex::new(HashMap::new()),
         }
     }
@@ -104,6 +114,22 @@ impl Profiler {
         log_info!("INFO: profiler stop.");
         self.walker_trace.stop();
         self.running.store(false, Ordering::Release);
+    }
+
+    pub unsafe fn add_runtime_stub(&mut self, name: *const i8, address: *const i8, len: u32) {
+        self.stub_lock.lock().map(|_| {
+            self.runtime_stub.add(address, len as _, name, true);
+        });
+        let name_str = cstr_2_str!(name);
+        if name_str == "call_stub" {
+            self.call_stub_begin = address;
+            self.call_stub_end = address.add(len as _);
+        }
+        get_vm_mut().update_heap_bounds(address, address.add(len as _));
+    }
+
+    pub unsafe fn add_java_method(&mut self, address: *const i8, len: u32) {
+        get_vm_mut().update_heap_bounds(address, address.add(len as _));
     }
 
     fn sleep_peroid(&self, d: u32) {
@@ -147,14 +173,15 @@ impl Profiler {
         self.locks.get(lock_idx).map(|l| {
             l.try_lock()
         });
-        let mut jvmti_trace = MaybeUninit::<JVMPICallTrace>::uninit();
+        let mut jvmti_trace = JVMPICallTrace::new(vm.get_jni_env().unwrap().inner());
         let mut call_chan = [ptr::null(); MAX_TRACE_DEEP];
         let mut java_ctx = StackContext::new();
         unsafe {
             let chan = StackWalker::walk_frame(ucontext as _, &mut call_chan, &mut java_ctx);
             self.convert_native_trace(chan, lock_idx);
-            (vm.asgc())(jvmti_trace.as_mut_ptr(), MAX_TRACE_DEEP as _, ucontext);
-            self.push_trace(&*jvmti_trace.as_ptr());
+            (vm.asgc())(&mut jvmti_trace as _, MAX_TRACE_DEEP as _, ucontext);
+            println!("{}", jvmti_trace.num_frames);
+            //self.push_trace(&*jvmti_trace.as_ptr());
         }
         self.locks.get(lock_idx).map(|l| {
             l.unlock()

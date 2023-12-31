@@ -1,7 +1,6 @@
 use std::cmp::Ordering;
 use std::ffi::CStr;
 use std::ptr;
-use std::rc::Rc;
 
 const NO_MIN_ADDRESS: *const i8 = -1 as _;
 const NO_MAX_ADDRESS: *const i8 = 0 as _;

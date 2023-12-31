@@ -1,11 +1,13 @@
+use crate::code_cache::NativeFunc;
 use crate::ctrl_svr::CtrlSvr;
 use crate::jvmti::{JNIEnv, JNIEnvPtr, JavaVM, JvmtiEnv, JvmtiEnvPtr, JvmtiEventCallbacks};
 use crate::jvmti_native::{
-    jint, jmethodID, jthread, JVMTI_ENABLE, JVMTI_EVENT_VM_INIT, jfieldID, JVMTI_EVENT_THREAD_START, JVMTI_EVENT_THREAD_END
+    jint, jmethodID, jthread, JVMTI_ENABLE, JVMTI_EVENT_VM_INIT, jfieldID, JVMTI_EVENT_THREAD_START, JVMTI_EVENT_THREAD_END, JVMTI_EVENT_DYNAMIC_CODE_GENERATED, jvmtiAddrLocationMap, JVMTI_EVENT_COMPILED_METHOD_LOAD
 };
 use crate::profiler::Profiler;
 use crate::vm_struct::{VMStruct, CodeHeap};
-use crate::{c_str, check_null, get_vm_mut, jni_method, log_error, MaybeUninitTake};
+use crate::{c_str, check_null, get_vm_mut, jni_method, log_error};
+use std::ffi::CStr;
 use std::mem::{self, MaybeUninit};
 use std::ptr;
 
@@ -73,6 +75,15 @@ pub struct JVMPICallTrace {
     pub frames: *mut JVMPICallFrame,
 }
 
+impl JVMPICallTrace {
+    pub fn new(env: JNIEnvPtr) -> Self {
+        Self {
+            env,
+            ..Default::default()
+        }
+    }
+}
+
 impl Default for JVMPICallTrace {
     fn default() -> Self {
         Self {
@@ -137,6 +148,8 @@ impl VM {
         jvmti_callback.VMInit = Some(Self::vm_init);
         jvmti_callback.ThreadStart = Some(Self::jvm_thread_start);
         jvmti_callback.ThreadEnd = Some(Self::jvm_thread_end);
+        jvmti_callback.DynamicCodeGenerated = Some(Self::jvm_dynamic_code_generated);
+        jvmti_callback.CompiledMethodLoad = Some(Self::jvm_compiled_method_load);
         self.jvmti
             .set_event_callbacks(
                 &jvmti_callback,
@@ -152,6 +165,12 @@ impl VM {
         self.jvmti
             .set_event_notification_mode(JVMTI_ENABLE, JVMTI_EVENT_THREAD_END, ptr::null_mut())
             .unwrap();
+        self.jvmti
+            .set_event_notification_mode(JVMTI_ENABLE, JVMTI_EVENT_DYNAMIC_CODE_GENERATED, ptr::null_mut())
+            .unwrap();
+        self.jvmti
+            .set_event_notification_mode(JVMTI_ENABLE, JVMTI_EVENT_COMPILED_METHOD_LOAD, ptr::null_mut())
+            .unwrap();
     }
 
     unsafe extern "C" fn jvm_thread_start(jvmti: JvmtiEnvPtr, jni: JNIEnvPtr, thread: jthread) {
@@ -160,6 +179,27 @@ impl VM {
 
     unsafe extern "C" fn jvm_thread_end(jvmti: JvmtiEnvPtr, jni: JNIEnvPtr, thread: jthread) {
         get_vm_mut().profiler_mut().update_thread_info(jvmti.into(), jni.into(), thread);
+    }
+
+    unsafe extern "C" fn jvm_dynamic_code_generated(
+        _jvmti: JvmtiEnvPtr, 
+        name: *const i8, 
+        address: *const libc::c_void, 
+        lenght: jint
+    ) {
+        get_vm_mut().profiler.add_runtime_stub(name, address as _, lenght as _);
+    }
+
+    unsafe extern "C" fn jvm_compiled_method_load(
+        _jvmti: JvmtiEnvPtr, 
+        _method: jmethodID,
+        code_size: jint,
+        code_addr: *const libc::c_void,
+        _map_length: jint, 
+        _map: *const jvmtiAddrLocationMap, 
+        _compile_info: *const libc::c_void,
+    ) {
+        get_vm_mut().profiler.add_java_method(code_addr as _, code_size as _);
     }
 
     extern "C" fn vm_init(_jvmti: JvmtiEnvPtr, jni: JNIEnvPtr, _jthr: jthread) {
@@ -173,7 +213,7 @@ impl VM {
         let stat = self.jvm.get_env(&mut jni, JNI_VERSION_1_6);
         match stat {
             Some(JNI_EDETACHED | JNI_EVERSION) => None,
-            _ => Some(jni.take().into()),
+            _ => Some(unsafe {jni.assume_init()}.into()),
         }
     }
 
@@ -285,6 +325,11 @@ impl VM {
     #[inline(always)]
     pub fn code_heap(&self) -> CodeHeap {
         self.vm_struct.code_heap()
+    }
+
+    #[inline(always)]
+    pub unsafe fn update_heap_bounds(&mut self, start: *const i8, end: *const i8) {
+        self.vm_struct.update_bounds(start, end);
     }
 
     #[inline(always)]

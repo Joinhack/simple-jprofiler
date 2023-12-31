@@ -3,8 +3,7 @@ mod nmethod;
 mod vmthread;
 pub use code_heap::CodeHeap;
 pub use vmthread::VMThread;
-pub use nmethod::NMethod;
-use std::{ffi::CStr, fmt::Display, ptr};
+use std::{ffi::CStr, fmt::Display, ptr, sync::atomic::{AtomicPtr, Ordering}};
 
 use libc::uintptr_t;
 
@@ -48,8 +47,8 @@ pub struct VMStruct {
     code_heap_addr: *const *const i8,
     code_heap_low_addr: *const *const i8,
     code_heap_high_addr: *const *const i8,
-    code_heap_low: *const i8,
-    code_heap_high: *const i8,
+    code_heap_low: AtomicPtr<i8>,
+    code_heap_high: AtomicPtr<i8>,
     code_heap_memory_offset: i32,
     code_heap_segmap_offset: i32,
     code_heap_segment_shift: i32,
@@ -230,8 +229,8 @@ impl VMStruct {
             has_class_names: false,
             code_heap:[ptr::null(); 3],
             has_method_structs: false,
-            code_heap_low: ptr::null(),
-            code_heap_high: ptr::null(),
+            code_heap_low: AtomicPtr::new(ptr::null_mut()),
+            code_heap_high: AtomicPtr::new(ptr::null_mut()),
             has_native_thread_id: false,
             thread_env_offset: -1,
         }
@@ -492,8 +491,8 @@ impl VMStruct {
                     self.code_heap[i] = *((code_heap_array as *const *const i8).add(i));
                 }
             }
-            self.code_heap_low = *self.code_heap_low_addr;
-            self.code_heap_high = *self.code_heap_high_addr;
+            self.code_heap_low.store(*self.code_heap_low_addr as _, Ordering::Release);
+            self.code_heap_high.store(*self.code_heap_high_addr as _, Ordering::Release);
         }
         if !self.code_heap[0].is_null() && self.code_heap_segment_shift >= 0 {
             // aquire the segment shift from heap
@@ -523,5 +522,19 @@ impl VMStruct {
     #[inline(always)]
     pub fn nmethod_name_offset(&self) ->  i32 {
         self.nmethod_name_offset
+    }
+
+    pub unsafe fn update_bounds(&mut self, start: *const i8, end: *const i8) {
+        let low = self.code_heap_low.load(Ordering::Acquire);
+        if start < low {
+            while let Ok(_) = self.code_heap_low.compare_exchange_weak(low, start as _, Ordering::Acquire, Ordering::Relaxed) {
+            }
+        }
+        
+        let high = self.code_heap_high.load(Ordering::Acquire);
+        if end > high {
+            while let Ok(_) = self.code_heap_high.compare_exchange_weak(high, end as _, Ordering::Acquire, Ordering::Relaxed) {
+            }
+        }
     }
 }

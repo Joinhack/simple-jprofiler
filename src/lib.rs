@@ -25,18 +25,6 @@ use crate::vm::VM;
 static AGENT_START: Once = Once::new();
 static mut VM_INSTANCE: Option<VM> = None;
 
-pub trait MaybeUninitTake<T> {
-    fn take(self) -> T;
-}
-
-impl<T: Copy> MaybeUninitTake<T> for MaybeUninit<T> {
-
-    #[inline(always)]
-    fn take(self) -> T {
-        unsafe { *self.as_ptr() }
-    }
-}
-
 #[inline(always)]
 pub fn get_vm_mut() -> &'static mut VM {
     unsafe { VM_INSTANCE.as_mut().unwrap() }
@@ -71,7 +59,7 @@ pub extern "C" fn Agent_OnLoad(
         } {
             log_error!("ERROR: get the jvmti fail");
         }
-        let vm_inst = VM::new(jvm, jvmti.take().into());
+        let vm_inst = VM::new(jvm, unsafe {jvmti.assume_init()}.into());
         set_vm(vm_inst);
         get_vm_mut().initial();
     });

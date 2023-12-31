@@ -9,10 +9,16 @@ impl SpinLock {
     }
 
     pub fn try_lock(&self) -> bool {
-        match self.0.compare_exchange_weak(false, true, Ordering::Release, Ordering::Relaxed) {
+        match self.0.compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed) {
             Ok(_) => true,
             Err(_) => false,
         }
+    }
+
+    pub fn lock(&self) -> Option<LockGuard> {
+        while let Ok(_) = self.0.compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed) {
+        }
+        Some(LockGuard::new(self))
     }
 
     pub fn try_lock_with_guard(&self) -> Option<LockGuard> {
@@ -24,7 +30,7 @@ impl SpinLock {
     }
 
     pub fn unlock(&self) {
-        while let Ok(_) = self.0.compare_exchange_weak(true, false, Ordering::Release, Ordering::Relaxed) {
+        while let Ok(_) = self.0.compare_exchange_weak(true, false, Ordering::Acquire, Ordering::Relaxed) {
         }
     }
 }

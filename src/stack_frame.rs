@@ -5,6 +5,7 @@ mod stack_frame_x64;
 #[cfg(target_pointer_width="64")]
 use stack_frame_x64::*;
 
+#[allow(non_camel_case_types)]
 type uintptr_t = usize;
 
 pub struct StackFrame {
