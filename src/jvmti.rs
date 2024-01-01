@@ -82,27 +82,12 @@ impl JvmtiEnv {
         }
     }
 
-    pub fn deallocate(
-        &self,
-        p: *const i8
-    ) -> u32 {
-        unsafe {
-            (**self.0)
-                .Deallocate
-                .map(|d| d(self.0, p as _))
-                .unwrap()
-        }
+    pub fn deallocate(&self, p: *const i8) -> u32 {
+        unsafe { (**self.0).Deallocate.map(|d| d(self.0, p as _)).unwrap() }
     }
 
-    pub fn get_current_thread(
-        &self,
-        jthread: *mut jthread,
-    ) -> Option<u32> {
-        unsafe {
-            (**self.0)
-                .GetCurrentThread
-                .map(|g| g(self.0, jthread as _))
-        }
+    pub fn get_current_thread(&self, jthread: *mut jthread) -> Option<u32> {
+        unsafe { (**self.0).GetCurrentThread.map(|g| g(self.0, jthread as _)) }
     }
 
     pub fn set_event_notification_mode(
@@ -118,17 +103,16 @@ impl JvmtiEnv {
         }
     }
 
-    pub fn get_thread_info(
-        &self,
-        thr: jthread,
-        thread_info: *mut jvmtiThreadInfo
-    ) -> i32 {
-        unsafe { 
-            match (**self.0).GetThreadInfo.map(|g| g(self.0, thr, thread_info)) {
+    pub fn get_thread_info(&self, thr: jthread, thread_info: *mut jvmtiThreadInfo) -> i32 {
+        unsafe {
+            match (**self.0)
+                .GetThreadInfo
+                .map(|g| g(self.0, thr, thread_info))
+            {
                 Some(o) => o as _,
                 _ => -1,
             }
-         }
+        }
     }
 }
 
@@ -161,37 +145,17 @@ impl JNIEnv {
     }
 
     #[inline(always)]
-    pub fn get_class_object(
-        &self,
-        obj: jobject,
-    ) -> Option<jclass> {
-        unsafe { 
-            check_null!((**self.0).GetObjectClass.map(|g| g(self.0, obj)))
-         }
+    pub fn get_class_object(&self, obj: jobject) -> Option<jclass> {
+        unsafe { check_null!((**self.0).GetObjectClass.map(|g| g(self.0, obj))) }
     }
 
     #[inline(always)]
-    pub fn get_field_id(
-        &self,
-        obj: jclass,
-        name: *const i8,
-        sig: *const i8,
-    ) -> Option<jfieldID> {
-        unsafe { 
-            check_null!((**self.0).GetFieldID.map(|g| g(self.0, obj, name, sig)))
-         }
+    pub fn get_field_id(&self, obj: jclass, name: *const i8, sig: *const i8) -> Option<jfieldID> {
+        unsafe { check_null!((**self.0).GetFieldID.map(|g| g(self.0, obj, name, sig))) }
     }
 
     #[inline(always)]
-    pub fn get_long_field(
-        &self,
-        obj: jobject,
-        field: jfieldID,
-    ) -> Option<jlong> {
-        unsafe { 
-            (**self.0).GetLongField.map(|g| g(self.0, obj, field))
-         }
+    pub fn get_long_field(&self, obj: jobject, field: jfieldID) -> Option<jlong> {
+        unsafe { (**self.0).GetLongField.map(|g| g(self.0, obj, field)) }
     }
-
-    
 }

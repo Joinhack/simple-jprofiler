@@ -1,6 +1,5 @@
 use super::uintptr_t;
 
-
 macro_rules! regm {
     ($s:ident, $m: tt) => {
         (*(*$s.ucontext).uc_mcontext).__ss.$m as *mut uintptr_t
@@ -75,9 +74,7 @@ pub(crate) struct StackFrameImpl {
 impl StackFrameImpl {
     #[inline(always)]
     pub fn new(ucontext: *const libc::ucontext_t) -> Self {
-        Self {
-            ucontext
-        }
+        Self { ucontext }
     }
 
     #[inline(always)]

@@ -18,7 +18,6 @@ pub struct OS;
 pub struct OSThreadList(OSThreadListImpl);
 
 impl OSThreadList {
-    
     pub fn new() -> Self {
         Self(OSThreadListImpl::new())
     }
@@ -35,7 +34,7 @@ impl OSThreadList {
 }
 
 impl OS {
-    pub fn send_thread_alarm(tid: u32, alarm:u32) {
+    pub fn send_thread_alarm(tid: u32, alarm: u32) {
         OSImpl::send_thread_alarm(tid, alarm);
     }
 
@@ -45,8 +44,6 @@ impl OS {
     }
 
     pub fn thread_state(tid: u32) -> ThreadState {
-        unsafe {
-            OSImpl::thread_state(tid)
-        }
+        unsafe { OSImpl::thread_state(tid) }
     }
 }

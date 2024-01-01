@@ -11,8 +11,8 @@ impl<'a> CodeHeap<'a> {
     }
 
     pub unsafe fn code_contains(&self, pc: *const i8) -> bool {
-        self.0.code_heap_low.load(Ordering::Acquire) <= pc as _ 
-            && pc  < self.0.code_heap_high.load(Ordering::Acquire) 
+        self.0.code_heap_low.load(Ordering::Acquire) <= pc as _
+            && pc < self.0.code_heap_high.load(Ordering::Acquire)
     }
 
     unsafe fn contain(&self, heap: *const i8, pc: *const i8) -> bool {
@@ -21,7 +21,8 @@ impl<'a> CodeHeap<'a> {
         }
         let mem_low_off = (self.0.code_heap_memory_offset + self.0.vs_low_offset) as _;
         let mem_hight_off = (self.0.code_heap_memory_offset + self.0.vs_high_offset) as _;
-        pc >= *(heap.add(mem_low_off) as *const *const i8) && pc < *(heap.add(mem_hight_off) as *const *const i8)
+        pc >= *(heap.add(mem_low_off) as *const *const i8)
+            && pc < *(heap.add(mem_hight_off) as *const *const i8)
     }
 
     unsafe fn find_nmethod_in_heap(&self, heap: *const i8, pc: *const i8) -> Option<NMethod> {
@@ -32,7 +33,7 @@ impl<'a> CodeHeap<'a> {
         let mut idx = (pc.sub(heap_start as _)) as isize >> self.0.code_heap_segment_shift as isize;
         let mut seg = *segmap.offset(idx);
         if seg as u8 == 0xff {
-            return  None;
+            return None;
         }
         while seg > 0 {
             idx -= seg as isize;

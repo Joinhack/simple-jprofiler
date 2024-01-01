@@ -1,6 +1,5 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
-
 pub struct SpinLock(AtomicBool);
 
 impl SpinLock {
@@ -10,7 +9,9 @@ impl SpinLock {
 
     #[inline(always)]
     pub fn try_lock(&self) -> bool {
-        self.0.compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed).is_ok()
+        self.0
+            .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_ok()
     }
 
     #[inline(always)]

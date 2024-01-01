@@ -1,4 +1,7 @@
-use std::{ptr, mem::{self, MaybeUninit}};
+use std::{
+    mem::{self, MaybeUninit},
+    ptr,
+};
 
 use super::ThreadState;
 
@@ -6,7 +9,7 @@ pub struct OSImpl;
 
 extern "C" {
     fn mach_port_deallocate(_: libc::c_uint, _: u32) -> libc::c_int;
-    fn native_send_thread_signal(tid:u32, signal: u32) -> u32;
+    fn native_send_thread_signal(tid: u32, signal: u32) -> u32;
 }
 
 impl OSImpl {
@@ -18,21 +21,20 @@ impl OSImpl {
         }
     }
 
-    pub fn send_thread_alarm(tid: u32, alarm:u32) -> bool {
-        unsafe {
-            native_send_thread_signal(tid, alarm) == 0
-        }
+    pub fn send_thread_alarm(tid: u32, alarm: u32) -> bool {
+        unsafe { native_send_thread_signal(tid, alarm) == 0 }
     }
 
     pub unsafe fn thread_state(tid: u32) -> ThreadState {
         let mut info = MaybeUninit::<libc::thread_basic_info>::uninit();
         let mut info_size = mem::size_of::<libc::thread_basic_info>();
         if libc::thread_info(
-            tid as _, 
-            libc::THREAD_BASIC_INFO as _, 
-            info.as_mut_ptr() as _, 
-            &mut info_size as *mut _ as _
-        ) != 0 {
+            tid as _,
+            libc::THREAD_BASIC_INFO as _,
+            info.as_mut_ptr() as _,
+            &mut info_size as *mut _ as _,
+        ) != 0
+        {
             return ThreadState::Invalid;
         }
         if (*info.as_ptr()).run_state == libc::TH_STATE_RUNNING {
@@ -40,7 +42,7 @@ impl OSImpl {
         } else {
             ThreadState::Sleeping
         }
-    } 
+    }
 }
 
 #[allow(non_camel_case_types)]
@@ -61,7 +63,7 @@ impl Drop for OSThreadListImpl {
 
 impl OSThreadListImpl {
     pub fn new() -> Self {
-        let task = unsafe {libc::mach_task_self()};
+        let task = unsafe { libc::mach_task_self() };
         Self {
             task,
             thread_array: None,
@@ -77,7 +79,7 @@ impl OSThreadListImpl {
             let mut thread_array = ptr::null_mut();
             let mut count = 0u32;
             unsafe {
-                libc::task_threads(self.task, &mut thread_array as *mut _, &mut count);   
+                libc::task_threads(self.task, &mut thread_array as *mut _, &mut count);
             }
             self.thread_array = Some(thread_array);
             self.thread_count = count as _;
@@ -85,13 +87,15 @@ impl OSThreadListImpl {
     }
 
     pub fn rewind(&mut self) {
-        self.thread_array.map(|thr_arr| {
-            unsafe {
-                for i in 0..self.thread_count {
-                    mach_port_deallocate(self.task, *thr_arr.add(i));
-                }
-                libc::vm_deallocate(self.task, thr_arr as _, mem::size_of::<u32>()*self.thread_count);
+        self.thread_array.map(|thr_arr| unsafe {
+            for i in 0..self.thread_count {
+                mach_port_deallocate(self.task, *thr_arr.add(i));
             }
+            libc::vm_deallocate(
+                self.task,
+                thr_arr as _,
+                mem::size_of::<u32>() * self.thread_count,
+            );
         });
         self.thread_array.take();
     }
@@ -102,12 +106,10 @@ impl OSThreadListImpl {
         if idx < self.thread_count {
             self.thread_array.map(|arr| {
                 self.thread_index += 1;
-                unsafe {*arr.offset(idx as _)}
+                unsafe { *arr.offset(idx as _) }
             })
         } else {
             None
         }
     }
-
 }
-

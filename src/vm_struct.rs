@@ -2,17 +2,22 @@ mod code_heap;
 mod nmethod;
 mod vmthread;
 pub use code_heap::CodeHeap;
+use std::{
+    ffi::CStr,
+    fmt::Display,
+    ptr,
+    sync::atomic::{AtomicPtr, Ordering},
+};
 pub use vmthread::VMThread;
-use std::{ffi::CStr, fmt::Display, ptr, sync::atomic::{AtomicPtr, Ordering}};
 
 use libc::uintptr_t;
 
 use crate::{
-    code_cache::CodeCache, 
-    jvmti_native::{jfieldID, jthread}, 
-    get_vm_mut, 
-    jvmti::JNIEnv, 
-    c_str
+    c_str,
+    code_cache::CodeCache,
+    get_vm_mut,
+    jvmti::JNIEnv,
+    jvmti_native::{jfieldID, jthread},
 };
 
 pub struct VMStruct {
@@ -227,7 +232,7 @@ impl VMStruct {
             tid: ptr::null_mut(),
             eetop: ptr::null_mut(),
             has_class_names: false,
-            code_heap:[ptr::null(); 3],
+            code_heap: [ptr::null(); 3],
             has_method_structs: false,
             code_heap_low: AtomicPtr::new(ptr::null_mut()),
             code_heap_high: AtomicPtr::new(ptr::null_mut()),
@@ -270,11 +275,9 @@ impl VMStruct {
 
     unsafe fn resovle_thread(&mut self, jni: &JNIEnv) {
         let mut thread: jthread = ptr::null_mut();
-        match get_vm_mut()
-            .jvmti()
-            .get_current_thread(&mut thread as _) {
-                Some(s) if s == 0  => {},
-                _ => return,
+        match get_vm_mut().jvmti().get_current_thread(&mut thread as _) {
+            Some(s) if s == 0 => {}
+            _ => return,
         };
         let thr_class = jni.get_class_object(thread).unwrap();
         self.tid = match jni.get_field_id(thr_class, c_str!("tid"), c_str!("J")) {
@@ -289,11 +292,10 @@ impl VMStruct {
         let vm_thread = VMThread::from_java_thread(jni, thread);
         if let Some(vm_thread) = vm_thread {
             self.thread_env_offset = (jni.inner() as *const i8).offset_from(vm_thread.inner()) as _;
-            self.has_native_thread_id = self.thread_osthread_offset > 0 && self.osthread_id_offset > 0;
+            self.has_native_thread_id =
+                self.thread_osthread_offset > 0 && self.osthread_id_offset > 0;
         }
-        
     }
-
 
     /// get the offset of the symbols
     unsafe fn initial_offset(&mut self) {
@@ -460,17 +462,17 @@ impl VMStruct {
                 self.resovle_thread(&jni);
             });
         }
-    } 
+    }
 
     pub unsafe fn resovle_offset(&mut self) {
         if !self.klass_offset_addr.is_null() {
-            self.klass = ((*self.klass_offset_addr)<<2|2) as uintptr_t as jfieldID
+            self.klass = ((*self.klass_offset_addr) << 2 | 2) as uintptr_t as jfieldID
         }
         self.has_class_names = self.klass_name_offset >= 0
             && (self.symbol_length_offset >= 0 || self.symbol_length_and_refcount_offset >= 0)
             && self.symbol_body_offset >= 0
             && !self.klass.is_null();
-        self.has_method_structs =self.jmethod_ids_offset >= 0
+        self.has_method_structs = self.jmethod_ids_offset >= 0
             && self.nmethod_method_offset >= 0
             && self.nmethod_entry_offset >= 0
             && self.nmethod_state_offset >= 0
@@ -480,61 +482,77 @@ impl VMStruct {
             && self.constmethod_idnum_offset >= 0
             && self.pool_holder_offset >= 0;
         // hotspot the heap
-        if !self.code_heap_addr.is_null() && 
-            !self.code_heap_low_addr.is_null() &&
-            !self.code_heap_high_addr.is_null() {
+        if !self.code_heap_addr.is_null()
+            && !self.code_heap_low_addr.is_null()
+            && !self.code_heap_high_addr.is_null()
+        {
             let code_heaps = *self.code_heap_addr;
             let code_heap_count = *(code_heaps as *const i32);
             if code_heap_count <= 3 && self.array_data_offset >= 0 {
-                let code_heap_array = *(code_heaps.add(self.array_data_offset as _) as *const *const i8);
+                let code_heap_array =
+                    *(code_heaps.add(self.array_data_offset as _) as *const *const i8);
                 for i in 0..code_heap_count as _ {
                     self.code_heap[i] = *((code_heap_array as *const *const i8).add(i));
                 }
             }
-            self.code_heap_low.store(*self.code_heap_low_addr as _, Ordering::Release);
-            self.code_heap_high.store(*self.code_heap_high_addr as _, Ordering::Release);
+            self.code_heap_low
+                .store(*self.code_heap_low_addr as _, Ordering::Release);
+            self.code_heap_high
+                .store(*self.code_heap_high_addr as _, Ordering::Release);
         }
         if !self.code_heap[0].is_null() && self.code_heap_segment_shift >= 0 {
             // aquire the segment shift from heap
-            self.code_heap_segment_shift = *(self.code_heap[0].add(self.code_heap_segment_shift as _) as *const i32);
+            self.code_heap_segment_shift =
+                *(self.code_heap[0].add(self.code_heap_segment_shift as _) as *const i32);
         }
-        if self.code_heap_memory_offset < 0 || self.code_heap_segmap_offset < 0 ||
-            self.code_heap_segment_shift < 0 || self.code_heap_segment_shift > 16 {
+        if self.code_heap_memory_offset < 0
+            || self.code_heap_segmap_offset < 0
+            || self.code_heap_segment_shift < 0
+            || self.code_heap_segment_shift > 16
+        {
             self.code_heap = [ptr::null(); 3];
         }
     }
 
     #[inline(always)]
-    pub fn has_method_structs(&self) ->  bool {
+    pub fn has_method_structs(&self) -> bool {
         self.has_method_structs
     }
 
     #[inline(always)]
-    pub fn has_native_thread_id(&self) ->  bool {
+    pub fn has_native_thread_id(&self) -> bool {
         self.has_native_thread_id
     }
 
     #[inline(always)]
-    pub fn thread_env_offset(&self) ->  i32 {
+    pub fn thread_env_offset(&self) -> i32 {
         self.thread_env_offset
     }
 
     #[inline(always)]
-    pub fn nmethod_name_offset(&self) ->  i32 {
+    pub fn nmethod_name_offset(&self) -> i32 {
         self.nmethod_name_offset
     }
 
     pub unsafe fn update_bounds(&mut self, start: *const i8, end: *const i8) {
         let low = self.code_heap_low.load(Ordering::Acquire);
         if start < low {
-            while let Ok(_) = self.code_heap_low.compare_exchange_weak(low, start as _, Ordering::Acquire, Ordering::Relaxed) {
-            }
+            while let Ok(_) = self.code_heap_low.compare_exchange_weak(
+                low,
+                start as _,
+                Ordering::Acquire,
+                Ordering::Relaxed,
+            ) {}
         }
-        
+
         let high = self.code_heap_high.load(Ordering::Acquire);
         if end > high {
-            while let Ok(_) = self.code_heap_high.compare_exchange_weak(high, end as _, Ordering::Acquire, Ordering::Relaxed) {
-            }
+            while let Ok(_) = self.code_heap_high.compare_exchange_weak(
+                high,
+                end as _,
+                Ordering::Acquire,
+                Ordering::Relaxed,
+            ) {}
         }
     }
 }

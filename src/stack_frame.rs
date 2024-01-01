@@ -1,8 +1,8 @@
 use std::usize;
 
-#[cfg(target_pointer_width="64")]
+#[cfg(target_pointer_width = "64")]
 mod stack_frame_x64;
-#[cfg(target_pointer_width="64")]
+#[cfg(target_pointer_width = "64")]
 use stack_frame_x64::*;
 
 #[allow(non_camel_case_types)]
@@ -17,10 +17,7 @@ impl StackFrame {
     #[inline(always)]
     pub fn new(ucontext: *const libc::ucontext_t) -> Self {
         let inner = StackFrameImpl::new(ucontext);
-        Self {
-            ucontext,
-            inner,
-        }
+        Self { ucontext, inner }
     }
 
     #[inline(always)]

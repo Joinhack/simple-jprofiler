@@ -1,10 +1,12 @@
 use crate::ctrl_svr::CtrlSvr;
 use crate::jvmti::{JNIEnv, JNIEnvPtr, JavaVM, JvmtiEnv, JvmtiEnvPtr, JvmtiEventCallbacks};
 use crate::jvmti_native::{
-    jint, jmethodID, jthread, JVMTI_ENABLE, JVMTI_EVENT_VM_INIT, jfieldID, JVMTI_EVENT_THREAD_START, JVMTI_EVENT_THREAD_END, JVMTI_EVENT_DYNAMIC_CODE_GENERATED, jvmtiAddrLocationMap, JVMTI_EVENT_COMPILED_METHOD_LOAD
+    jfieldID, jint, jmethodID, jthread, jvmtiAddrLocationMap, JVMTI_ENABLE,
+    JVMTI_EVENT_COMPILED_METHOD_LOAD, JVMTI_EVENT_DYNAMIC_CODE_GENERATED, JVMTI_EVENT_THREAD_END,
+    JVMTI_EVENT_THREAD_START, JVMTI_EVENT_VM_INIT,
 };
 use crate::profiler::Profiler;
-use crate::vm_struct::{VMStruct, CodeHeap};
+use crate::vm_struct::{CodeHeap, VMStruct};
 use crate::{c_str, check_null, get_vm_mut, jni_method, log_error};
 use std::mem::{self, MaybeUninit};
 use std::ptr;
@@ -15,8 +17,7 @@ pub const JNI_EVERSION: i32 = -3;
 pub const DEFAUTLT_CTRL_PORT: u32 = 5000;
 
 pub const MAX_NATIVE_FRAMES: usize = 128;
-pub const RESERVED_FRAMES: usize   = 4;
-
+pub const RESERVED_FRAMES: usize = 4;
 
 pub enum ASGCTCallFrameType {
     BCINativeFrame,
@@ -92,9 +93,7 @@ impl Default for JVMPICallTrace {
     }
 }
 
-pub struct CallTraceBuff {
-
-}
+pub struct CallTraceBuff {}
 
 type AsgcType = unsafe extern "C" fn(*mut JVMPICallTrace, jint, *const libc::c_void);
 
@@ -164,40 +163,56 @@ impl VM {
             .set_event_notification_mode(JVMTI_ENABLE, JVMTI_EVENT_THREAD_END, ptr::null_mut())
             .unwrap();
         self.jvmti
-            .set_event_notification_mode(JVMTI_ENABLE, JVMTI_EVENT_DYNAMIC_CODE_GENERATED, ptr::null_mut())
+            .set_event_notification_mode(
+                JVMTI_ENABLE,
+                JVMTI_EVENT_DYNAMIC_CODE_GENERATED,
+                ptr::null_mut(),
+            )
             .unwrap();
         self.jvmti
-            .set_event_notification_mode(JVMTI_ENABLE, JVMTI_EVENT_COMPILED_METHOD_LOAD, ptr::null_mut())
+            .set_event_notification_mode(
+                JVMTI_ENABLE,
+                JVMTI_EVENT_COMPILED_METHOD_LOAD,
+                ptr::null_mut(),
+            )
             .unwrap();
     }
 
     unsafe extern "C" fn jvm_thread_start(jvmti: JvmtiEnvPtr, jni: JNIEnvPtr, thread: jthread) {
-        get_vm_mut().profiler_mut().update_thread_info(jvmti.into(), jni.into(), thread);
+        get_vm_mut()
+            .profiler_mut()
+            .update_thread_info(jvmti.into(), jni.into(), thread);
     }
 
     unsafe extern "C" fn jvm_thread_end(jvmti: JvmtiEnvPtr, jni: JNIEnvPtr, thread: jthread) {
-        get_vm_mut().profiler_mut().update_thread_info(jvmti.into(), jni.into(), thread);
+        get_vm_mut()
+            .profiler_mut()
+            .update_thread_info(jvmti.into(), jni.into(), thread);
     }
 
     unsafe extern "C" fn jvm_dynamic_code_generated(
-        _jvmti: JvmtiEnvPtr, 
-        name: *const i8, 
-        address: *const libc::c_void, 
-        lenght: jint
+        _jvmti: JvmtiEnvPtr,
+        name: *const i8,
+        address: *const libc::c_void,
+        lenght: jint,
     ) {
-        get_vm_mut().profiler.add_runtime_stub(name, address as _, lenght as _);
+        get_vm_mut()
+            .profiler
+            .add_runtime_stub(name, address as _, lenght as _);
     }
 
     unsafe extern "C" fn jvm_compiled_method_load(
-        _jvmti: JvmtiEnvPtr, 
+        _jvmti: JvmtiEnvPtr,
         _method: jmethodID,
         code_size: jint,
         code_addr: *const libc::c_void,
-        _map_length: jint, 
-        _map: *const jvmtiAddrLocationMap, 
+        _map_length: jint,
+        _map: *const jvmtiAddrLocationMap,
         _compile_info: *const libc::c_void,
     ) {
-        get_vm_mut().profiler.add_java_method(code_addr as _, code_size as _);
+        get_vm_mut()
+            .profiler
+            .add_java_method(code_addr as _, code_size as _);
     }
 
     extern "C" fn vm_init(_jvmti: JvmtiEnvPtr, jni: JNIEnvPtr, _jthr: jthread) {
@@ -211,7 +226,7 @@ impl VM {
         let stat = self.jvm.get_env(&mut jni, JNI_VERSION_1_6);
         match stat {
             Some(JNI_EDETACHED | JNI_EVERSION) => None,
-            _ => Some(unsafe {jni.assume_init()}.into()),
+            _ => Some(unsafe { jni.assume_init() }.into()),
         }
     }
 

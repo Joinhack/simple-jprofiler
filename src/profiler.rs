@@ -1,25 +1,26 @@
 use std::collections::HashMap;
 use std::ffi::CStr;
 use std::mem::MaybeUninit;
-use std::sync::Mutex;
 use std::sync::atomic::Ordering;
+use std::sync::Mutex;
 use std::{mem, ptr};
 use std::{sync::atomic::AtomicBool, time::Duration};
 
 use crate::cstr_2_str;
-use crate::{c_str, code_cache::{CodeCache, CodeBlob}};
-use crate::jvmti::{
-    JNIEnv, JVMTI_THREAD_NORM_PRIORITY, JvmtiEnv
-};
+use crate::jvmti::{JNIEnv, JvmtiEnv, JVMTI_THREAD_NORM_PRIORITY};
 use crate::jvmti_native::{jthread, jvmtiThreadInfo};
 use crate::os::OS;
 use crate::signal_prof::{SigactionFn, SignalProf};
 use crate::spinlock::SpinLock;
-use crate::stack_walker::{StackWalker, StackContext};
+use crate::stack_walker::{StackContext, StackWalker};
 use crate::symbol_parser::SymbolParser;
-use crate::vm::{JVMPICallTrace, JVMPICallFrame, ASGCTCallFrameType};
+use crate::vm::{ASGCTCallFrameType, JVMPICallFrame, JVMPICallTrace};
 use crate::vm_struct::VMThread;
 use crate::walker_trace::WalkerTrace;
+use crate::{
+    c_str,
+    code_cache::{CodeBlob, CodeCache},
+};
 use crate::{circle_queue::CircleQueue, get_vm_mut, log_info, VM};
 
 const DEFAULT_MIN_SIGNAL: u32 = 100_000_000;
@@ -60,11 +61,8 @@ impl Profiler {
         let queue = CircleQueue::new();
         let mut calltrace_buffer = Vec::new();
         let walker_trace = WalkerTrace::new();
-        (0..CONCURRENCY_LEVEL)
-            .for_each(|_| calltrace_buffer.push(Vec::new()));
-        let locks = (0..CONCURRENCY_LEVEL)
-            .map(|_| SpinLock::new())
-            .collect();
+        (0..CONCURRENCY_LEVEL).for_each(|_| calltrace_buffer.push(Vec::new()));
+        let locks = (0..CONCURRENCY_LEVEL).map(|_| SpinLock::new()).collect();
         let runtime_stub = CodeCache::new(c_str!("[stubs]"), -1 as _);
         Self {
             locks,
@@ -146,7 +144,7 @@ impl Profiler {
     }
 
     #[inline(always)]
-    pub fn find_native_method(&self, pc: *const i8) ->Option<&CodeBlob> {
+    pub fn find_native_method(&self, pc: *const i8) -> Option<&CodeBlob> {
         self.find_library_by_address(pc)
             .and_then(|cc| cc.binary_search(pc))
     }
@@ -166,14 +164,12 @@ impl Profiler {
         self.walker_trace.run();
     }
 
-    pub fn get_java_async_trace(&mut self, ucontext:  *mut libc::c_void) {
+    pub fn get_java_async_trace(&mut self, ucontext: *mut libc::c_void) {
         let vm = get_vm_mut();
         let tid = OS::thread_id();
         let lock_idx = self.get_lock_index(tid) as usize;
-        self.locks.get(lock_idx).map(|l| {
-            l.try_lock()
-        });
-        
+        self.locks.get(lock_idx).map(|l| l.try_lock());
+
         let mut call_chan = [ptr::null(); MAX_TRACE_DEEP];
         let mut java_ctx = StackContext::new();
         unsafe {
@@ -188,9 +184,7 @@ impl Profiler {
             println!("{}", jvmti_trace.num_frames);
             //self.push_trace(&*jvmti_trace.as_ptr());
         }
-        self.locks.get(lock_idx).map(|l| {
-            l.unlock()
-        });
+        self.locks.get(lock_idx).map(|l| l.unlock());
     }
 
     fn get_lock_index(&self, tid: u32) -> u32 {
@@ -202,18 +196,22 @@ impl Profiler {
 
     fn convert_native_trace(&mut self, call_chan: &[*const ()], idx: usize) {
         let mut prev_call = ptr::null();
-        let call_trace = call_chan.iter().filter_map(|cc| {
-            let nm = self.find_native_method(*cc as _);
-            nm.map(|nm| {
-                let name_ptr = nm.name_ptr();
-                prev_call = name_ptr;
-                JVMPICallFrame {
-                    bci: ASGCTCallFrameType::BCINativeFrame.into(),
-                    method_id: name_ptr as _
-                }
+        let call_trace = call_chan
+            .iter()
+            .filter_map(|cc| {
+                let nm = self.find_native_method(*cc as _);
+                nm.map(|nm| {
+                    let name_ptr = nm.name_ptr();
+                    prev_call = name_ptr;
+                    JVMPICallFrame {
+                        bci: ASGCTCallFrameType::BCINativeFrame.into(),
+                        method_id: name_ptr as _,
+                    }
+                })
             })
-        }).collect::<Vec<_>>();
-        let buf = self.calltrace_buffer
+            .collect::<Vec<_>>();
+        let buf = self
+            .calltrace_buffer
             .get_mut(idx)
             .expect("get idx calltrace buffer fail");
         *buf = call_trace;
@@ -229,20 +227,21 @@ impl Profiler {
                 if jvmti.get_thread_info(thread, info_ptr) == 0 {
                     let thr_name = CStr::from_ptr((*info_ptr).name);
                     let name = std::str::from_utf8_unchecked(thr_name.to_bytes()).into();
-                    self.set_thread_info(vm_thr.os_thread_id() as _, ThreadInfo { 
-                        jthread_id, 
-                        name,
-                    });
+                    self.set_thread_info(
+                        vm_thr.os_thread_id() as _,
+                        ThreadInfo { jthread_id, name },
+                    );
                 }
             }
         });
     }
 
     #[inline(always)]
-    fn set_thread_info(&mut self, nthrad_id:u64, thr_info: ThreadInfo) {
-        let _  = self.jthreads.get_mut().map(|jthreads| {
-            jthreads.insert(nthrad_id, thr_info)
-        });
+    fn set_thread_info(&mut self, nthrad_id: u64, thr_info: ThreadInfo) {
+        let _ = self
+            .jthreads
+            .get_mut()
+            .map(|jthreads| jthreads.insert(nthrad_id, thr_info));
     }
 
     #[inline]

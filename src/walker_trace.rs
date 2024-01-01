@@ -1,6 +1,9 @@
-use std::{sync::atomic::{AtomicBool, Ordering}, time::Duration};
+use std::{
+    sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
+};
 
-use crate::os::{OSThreadList, OS, ThreadState};
+use crate::os::{OSThreadList, ThreadState, OS};
 
 const THREAD_PER_TICKS: usize = 8;
 
@@ -12,7 +15,7 @@ pub struct WalkerTrace {
 }
 
 impl WalkerTrace {
-    pub fn new() ->  Self {
+    pub fn new() -> Self {
         Self {
             interval: MIN_INTERVAL,
             running: AtomicBool::new(false),
@@ -37,11 +40,11 @@ impl WalkerTrace {
                     }
                     Some(tid) => tid,
                 };
-                
+
                 if tid == self_tid {
                     continue;
                 }
-                
+
                 if let ThreadState::Running = OS::thread_state(tid) {
                     OS::send_thread_alarm(tid, libc::SIGALRM as _);
                     count += 1;

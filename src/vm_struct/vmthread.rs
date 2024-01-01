@@ -1,20 +1,19 @@
-use crate::{jvmti::JNIEnv, jvmti_native::jthread, get_vm};
+use crate::{get_vm, jvmti::JNIEnv, jvmti_native::jthread};
 
-pub struct VMThread{
-    inner: *const i8, 
+pub struct VMThread {
+    inner: *const i8,
     osthread_id_offset: i32,
     thread_osthread_offset: i32,
 }
 
 impl VMThread {
-    
     #[inline(always)]
     pub fn from_java_thread(jni: &JNIEnv, thread: jthread) -> Option<Self> {
         let vm = get_vm();
         let eetop = vm.eetop();
         match jni.get_long_field(thread, eetop) {
-            Some(p) => Some(Self{
-                inner:p as _, 
+            Some(p) => Some(Self {
+                inner: p as _,
                 osthread_id_offset: vm.osthread_id_offset(),
                 thread_osthread_offset: vm.thread_osthread_offset(),
             }),
@@ -51,8 +50,8 @@ impl VMThread {
     pub unsafe fn from_jni_env(jni: &JNIEnv) -> Self {
         let vm = get_vm();
         let inner = (jni.inner() as *const i8).offset(vm.thread_env_offset() as _) as _;
-        Self{
-            inner, 
+        Self {
+            inner,
             osthread_id_offset: vm.osthread_id_offset(),
             thread_osthread_offset: vm.thread_osthread_offset(),
         }

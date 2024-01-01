@@ -1,4 +1,4 @@
-use std::{ptr, mem};
+use std::{mem, ptr};
 
 use libc::uintptr_t;
 
@@ -35,9 +35,10 @@ pub struct StackWalker;
 
 impl StackWalker {
     pub unsafe fn walk_frame<'a>(
-        ucontext: *const (), 
-        call_chan:&'a mut [*const ()], 
-        java_ctx: &mut StackContext) -> &'a [*const ()] {
+        ucontext: *const (),
+        call_chan: &'a mut [*const ()],
+        java_ctx: &mut StackContext,
+    ) -> &'a [*const ()] {
         let sp = 0;
         let bottom = (&sp as *const _ as uintptr_t) + MAX_WALK_SIZE;
         let mut frame = StackFrame::new(ucontext as _);
@@ -50,19 +51,16 @@ impl StackWalker {
             let code_heap = vm.code_heap();
             if code_heap.code_contains(pc as _) {
                 java_ctx.set(pc, sp, fp);
-                break
+                break;
             }
             call_chan[deep] = pc;
             deep += 1;
-            
             if fp < sp || fp >= sp + MAX_FRAME_SIZE || fp >= bottom {
                 break;
             }
-
             if fp & (mem::size_of::<uintptr_t>() - 1) != 0 {
                 break;
             }
-
             pc = *(fp as *const *const ()).add(FRAME_PC_SLOT);
             if pc < MIN_VALID_PC as _ || pc > (-MIN_VALID_PC) as _ {
                 break;

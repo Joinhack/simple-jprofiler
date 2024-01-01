@@ -1,6 +1,6 @@
 use std::ffi::CStr;
 
-pub struct NMethod{
+pub struct NMethod {
     inner: *const i8,
     nmethod_name_offset: i32,
 }
@@ -9,7 +9,7 @@ impl NMethod {
     pub fn new(inner: *const i8, nmethod_name_offset: i32) -> Self {
         Self {
             inner,
-            nmethod_name_offset
+            nmethod_name_offset,
         }
     }
 
@@ -26,5 +26,4 @@ impl NMethod {
         let name = CStr::from_ptr(self.name());
         std::str::from_utf8_unchecked(name.to_bytes())
     }
-
 }

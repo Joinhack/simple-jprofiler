@@ -1,20 +1,20 @@
-mod os;
-mod vm;
+mod circle_queue;
+mod code_cache;
+mod ctrl_svr;
 mod dwarf;
 mod jvmti;
-mod r#macro;
-mod ctrl_svr;
-mod code_cache;
-mod stack_frame;
-mod walker_trace;
-mod stack_walker;
-mod circle_queue;
 mod jvmti_native;
-mod spinlock;
+mod r#macro;
+mod os;
 mod profiler;
-mod vm_struct;
 mod signal_prof;
+mod spinlock;
+mod stack_frame;
+mod stack_walker;
 mod symbol_parser;
+mod vm;
+mod vm_struct;
+mod walker_trace;
 
 use jvmti::{JavaVMPtr, JvmtiEnvPtr};
 use std::{mem::MaybeUninit, sync::Once};
@@ -59,7 +59,7 @@ pub extern "C" fn Agent_OnLoad(
         } {
             log_error!("ERROR: get the jvmti fail");
         }
-        let vm_inst = VM::new(jvm, unsafe {jvmti.assume_init()}.into());
+        let vm_inst = VM::new(jvm, unsafe { jvmti.assume_init() }.into());
         set_vm(vm_inst);
         get_vm_mut().initial();
     });

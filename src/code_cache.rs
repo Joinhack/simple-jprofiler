@@ -205,7 +205,9 @@ impl CodeCache {
             Ok(pos) => return self.blobs.get(pos),
             Err(low) => low,
         };
-        if low > 0 && self.blobs[low - 1].start == self.blobs[low - 1].end || self.blobs[low - 1].end == addr {
+        if low > 0 && self.blobs[low - 1].start == self.blobs[low - 1].end
+            || self.blobs[low - 1].end == addr
+        {
             return self.blobs.get(low - 1);
         }
         None
