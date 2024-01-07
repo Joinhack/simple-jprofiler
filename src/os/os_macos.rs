@@ -1,6 +1,7 @@
 use std::{
     mem::{self, MaybeUninit},
-    ptr,
+    arch::asm,
+    ptr
 };
 
 use super::ThreadState;
@@ -21,8 +22,38 @@ impl OSImpl {
         }
     }
 
+    
+    unsafe fn native_send_thread_signal(tid: u32, signal: u32) -> bool {
+        #[cfg(target_arch="aarch64")]
+        {
+            let mut input_tid_rs = tid;
+            asm!(
+                "svc #0x80",
+                inlateout("x0") input_tid_rs,
+                in("x1") signal,
+                in("x16") 328,
+                options(nomem)
+            );
+            input_tid_rs == 0
+        }
+        #[cfg(not(target_arch="aarch64"))]
+        {
+            let mut svr = 0x2000148;
+            asm!(
+                "syscall",
+                inlateout("ax") svr,
+                in("di") tid,
+                in("si") signal,
+                out("cx") _,
+                out("r11") _,
+                options(nomem)
+            );
+            svr == 0
+        }
+    }
+
     pub fn send_thread_alarm(tid: u32, alarm: u32) -> bool {
-        unsafe { native_send_thread_signal(tid, alarm) == 0 }
+        unsafe { Self::native_send_thread_signal(tid, alarm) }
     }
 
     pub unsafe fn thread_state(tid: u32) -> ThreadState {

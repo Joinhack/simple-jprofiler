@@ -202,6 +202,7 @@ impl Profiler {
                 let nm = self.find_native_method(*cc as _);
                 nm.map(|nm| {
                     let name_ptr = nm.name_ptr();
+                    println!("{}", nm.name_str());
                     prev_call = name_ptr;
                     JVMPICallFrame {
                         bci: ASGCTCallFrameType::BCINativeFrame.into(),
