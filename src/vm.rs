@@ -3,7 +3,7 @@ use crate::jvmti::{JNIEnv, JNIEnvPtr, JavaVM, JvmtiEnv, JvmtiEnvPtr, JvmtiEventC
 use crate::jvmti_native::{
     jfieldID, jint, jmethodID, jthread, jvmtiAddrLocationMap, JVMTI_ENABLE,
     JVMTI_EVENT_COMPILED_METHOD_LOAD, JVMTI_EVENT_DYNAMIC_CODE_GENERATED, JVMTI_EVENT_THREAD_END,
-    JVMTI_EVENT_THREAD_START, JVMTI_EVENT_VM_INIT,
+    JVMTI_EVENT_THREAD_START, JVMTI_EVENT_VM_INIT, JVMTI_EVENT_CLASS_LOAD, jclass,
 };
 use crate::profiler::Profiler;
 use crate::vm_struct::{CodeHeap, VMStruct};
@@ -18,6 +18,13 @@ pub const DEFAUTLT_CTRL_PORT: u32 = 5000;
 
 pub const MAX_NATIVE_FRAMES: usize = 128;
 pub const RESERVED_FRAMES: usize = 4;
+pub const MAX_FRAMES: usize = 2048;
+
+pub const ASGCTFAIL_TICKS_NO_CLASS_LOAD: i32 = -1;
+pub const ASGCTFAIL_TICKS_GCACTIVE: i32 = -2;
+pub const ASGCTFAIL_TICKS_UNKNOWN_NOT_JAVA: i32 = -3;
+pub const ASGCTFAIL_TICKS_NOT_WALKABLE_JAVA: i32 = -4;
+pub const ASGCTFAIL_TICKS_UNKNOWN_JAVA: i32 = -5;
 
 pub enum ASGCTCallFrameType {
     BCINativeFrame,
@@ -30,6 +37,8 @@ pub enum ASGCTCallFrameType {
     BCIError,
     BCIInstrument,
 }
+
+
 
 impl Into<jint> for ASGCTCallFrameType {
     fn into(self) -> jint {
@@ -47,8 +56,8 @@ impl Into<jint> for ASGCTCallFrameType {
     }
 }
 
-#[repr(C)]
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct JVMPICallFrame {
     pub bci: jint,
     pub method_id: jmethodID,
@@ -63,8 +72,9 @@ impl Default for JVMPICallFrame {
     }
 }
 
-#[repr(C)]
+
 #[derive(Copy, Clone)]
+#[repr(C)]
 pub struct JVMPICallTrace {
     // JNIEnv of the thread from which we grabbed the trace
     pub env: JNIEnvPtr,
@@ -75,10 +85,11 @@ pub struct JVMPICallTrace {
 }
 
 impl JVMPICallTrace {
-    pub fn new(env: JNIEnvPtr) -> Self {
+    pub fn new(env: JNIEnvPtr, frames: *mut JVMPICallFrame) -> Self {
         Self {
             env,
-            ..Default::default()
+            frames,
+            num_frames: 0,
         }
     }
 }
@@ -92,8 +103,6 @@ impl Default for JVMPICallTrace {
         }
     }
 }
-
-pub struct CallTraceBuff {}
 
 type AsgcType = unsafe extern "C" fn(*mut JVMPICallTrace, jint, *const libc::c_void);
 
@@ -143,6 +152,7 @@ impl VM {
         self.profiler.set_signal_action(Self::prof_signal_handle);
         let mut jvmti_callback: JvmtiEventCallbacks = unsafe { std::mem::zeroed() };
         jvmti_callback.VMInit = Some(Self::vm_init);
+        jvmti_callback.ClassLoad = Some(Self::class_load);
         jvmti_callback.ThreadStart = Some(Self::jvm_thread_start);
         jvmti_callback.ThreadEnd = Some(Self::jvm_thread_end);
         jvmti_callback.DynamicCodeGenerated = Some(Self::jvm_dynamic_code_generated);
@@ -153,29 +163,27 @@ impl VM {
                 std::mem::size_of::<JvmtiEventCallbacks>() as _,
             )
             .unwrap();
-        self.jvmti
-            .set_event_notification_mode(JVMTI_ENABLE, JVMTI_EVENT_VM_INIT, ptr::null_mut())
-            .unwrap();
-        self.jvmti
-            .set_event_notification_mode(JVMTI_ENABLE, JVMTI_EVENT_THREAD_START, ptr::null_mut())
-            .unwrap();
-        self.jvmti
-            .set_event_notification_mode(JVMTI_ENABLE, JVMTI_EVENT_THREAD_END, ptr::null_mut())
-            .unwrap();
-        self.jvmti
-            .set_event_notification_mode(
-                JVMTI_ENABLE,
-                JVMTI_EVENT_DYNAMIC_CODE_GENERATED,
-                ptr::null_mut(),
-            )
-            .unwrap();
-        self.jvmti
-            .set_event_notification_mode(
-                JVMTI_ENABLE,
-                JVMTI_EVENT_COMPILED_METHOD_LOAD,
-                ptr::null_mut(),
-            )
-            .unwrap();
+        macro_rules! jvmti_enable {
+            ($p: expr, $param: expr) => {
+                self.jvmti
+                    .set_event_notification_mode(JVMTI_ENABLE, $p, $param)
+                    .unwrap();
+            };
+            ($p: expr) => {
+                jvmti_enable!($p, ptr::null_mut())
+            }
+        }
+        jvmti_enable!(JVMTI_EVENT_VM_INIT);
+        jvmti_enable!(JVMTI_EVENT_THREAD_START);
+        jvmti_enable!(JVMTI_EVENT_THREAD_END);
+        //JVMTI_EVENT_CLASS_LOAD must be enable, if this value is disable, the AsyncGetCallTrace will return -1
+        jvmti_enable!(JVMTI_EVENT_CLASS_LOAD);
+        jvmti_enable!(JVMTI_EVENT_DYNAMIC_CODE_GENERATED);
+        jvmti_enable!(JVMTI_EVENT_COMPILED_METHOD_LOAD);
+    }
+
+    unsafe extern "C" fn class_load(_jvmti: JvmtiEnvPtr, _jni: JNIEnvPtr, _thr: jthread, _class: jclass) {
+        // Needed by AsyncGetCallTrace
     }
 
     unsafe extern "C" fn jvm_thread_start(jvmti: JvmtiEnvPtr, jni: JNIEnvPtr, thread: jthread) {
@@ -236,7 +244,7 @@ impl VM {
         ucontext: *mut libc::c_void,
     ) {
         let vm = get_vm_mut();
-        vm.profiler.get_java_async_trace(ucontext);
+        vm.profiler.get_call_trace(ucontext);
     }
 
     fn asgc_symbol() -> AsgcType {
@@ -296,6 +304,8 @@ impl VM {
         get_vm_mut().profiler.run();
     }
 
+    /// new java thread with thread name
+    /// the thread name must be c str end with \0.
     pub fn new_java_thread(jni: JNIEnv, thr_name: *const i8) -> Option<jthread> {
         unsafe {
             (**jni.inner())

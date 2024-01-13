@@ -537,22 +537,12 @@ impl VMStruct {
     pub unsafe fn update_bounds(&mut self, start: *const i8, end: *const i8) {
         let low = self.code_heap_low.load(Ordering::Acquire);
         if start < low {
-            while let Ok(_) = self.code_heap_low.compare_exchange_weak(
-                low,
-                start as _,
-                Ordering::Acquire,
-                Ordering::Relaxed,
-            ) {}
+            self.code_heap_low.store(start as _, Ordering::Release);
         }
 
         let high = self.code_heap_high.load(Ordering::Acquire);
         if end > high {
-            while let Ok(_) = self.code_heap_high.compare_exchange_weak(
-                high,
-                end as _,
-                Ordering::Acquire,
-                Ordering::Relaxed,
-            ) {}
+            self.code_heap_high.store(end as _, Ordering::Release);
         }
     }
 }
