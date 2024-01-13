@@ -174,28 +174,39 @@ impl Profiler {
         let tid = OS::thread_id();
         let lock_idx = self.get_lock_index(tid) as usize;
         self.locks.get(lock_idx).map(|l| l.try_lock());
-        let mut call_chan = [ptr::null(); MAX_NATIVE_FRAMES];
+        
         let mut java_ctx = StackContext::new();
         unsafe {
-            let chan = StackWalker::walk_frame(ucontext as _, &mut call_chan, &mut java_ctx);
-            let num_frames = self.convert_native_trace(chan, lock_idx);
-            self.get_java_async_trace(lock_idx, num_frames, ucontext);
+            let num_frames = self.get_native_trace(ucontext, lock_idx, &mut java_ctx);
+            self.get_java_async_trace(ucontext, lock_idx, num_frames);
         }
         self.locks.get(lock_idx).map(|l| l.unlock());
     }
 
+    /// walk the native call trace
+    #[inline]
+    unsafe fn get_native_trace(
+        &mut self,
+        ucontext: *mut libc::c_void, 
+        idx: usize,
+        java_ctx: &mut StackContext,
+    ) -> usize {
+        let mut call_chan = [ptr::null(); MAX_NATIVE_FRAMES];
+        let chan = StackWalker::walk_frame(ucontext as _, &mut call_chan, java_ctx);
+        self.convert_native_trace(chan, idx)
+    }
+
     unsafe fn get_java_async_trace(
         &mut self, 
+        ucontext: *mut libc::c_void, 
         idx: usize,
         num_frames: usize,
-        ucontext: *mut libc::c_void, 
     ) {
         let vm = get_vm_mut();
         let jni = vm.get_jni_env();
         if jni.is_none() {
             return;
         }
-        
         let buf = self
             .calltrace_buffer
             .get_mut(idx)
@@ -223,8 +234,6 @@ impl Profiler {
                 let nm = self.find_native_method(*cc as _);
                 nm.map(|nm| {
                     let name_ptr = nm.name_ptr();
-                    //TODO remove.
-                    println!("{}", nm.name_str());
                     prev_call = name_ptr;
                     JVMPICallFrame {
                         bci: ASGCTCallFrameType::BCINativeFrame.into(),
