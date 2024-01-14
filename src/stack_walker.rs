@@ -42,9 +42,9 @@ impl StackWalker {
         let sp = 0;
         let bottom = (&sp as *const _ as uintptr_t) + MAX_WALK_SIZE;
         let mut frame = StackFrame::new(ucontext as _);
-        let mut pc = frame.pc() as _;
-        let mut fp = frame.fp() as _;
-        let sp = frame.sp() as _;
+        let mut pc = *frame.pc() as _;
+        let mut fp = *frame.fp() as _;
+        let sp = *frame.sp() as _;
         let mut deep = 0;
         while deep < call_chan.len() {
             let vm = get_vm();

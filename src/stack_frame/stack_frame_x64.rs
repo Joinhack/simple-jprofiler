@@ -2,12 +2,12 @@ use super::uintptr_t;
 
 macro_rules! regm {
     ($s:ident, $m: tt) => {
-        (*(*$s.ucontext).uc_mcontext).__ss.$m as *mut uintptr_t
+        &mut ((*(*$s.ucontext).uc_mcontext).__ss.$m as uintptr_t)
     };
 }
 macro_rules! regl {
     ($s:ident, $r: expr) => {
-        (*$s.ucontext).uc_mcontext.gregs[$r as usize] as *mut uintptr_t
+        (*$s.ucontext).uc_mcontext.gregs[$r as usize] as &mut uintptr_t
     };
 }
 
@@ -119,6 +119,6 @@ impl StackFrameImpl {
 
     #[inline(always)]
     pub unsafe fn stack_at(&mut self, pos: isize) -> uintptr_t {
-        *self.sp().offset(pos)
+        *((*self.sp()) as *const uintptr_t).offset(pos)
     }
 }

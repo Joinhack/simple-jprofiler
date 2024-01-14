@@ -12,6 +12,7 @@ use crate::jvmti_native::{jthread, jvmtiThreadInfo};
 use crate::os::OS;
 use crate::signal_prof::{SigactionFn, SignalProf};
 use crate::spinlock::SpinLock;
+use crate::stack_frame::StackFrame;
 use crate::stack_walker::{StackContext, StackWalker};
 use crate::symbol_parser::SymbolParser;
 use crate::vm::{ASGCTCallFrameType, JVMPICallFrame, JVMPICallTrace, MAX_FRAMES, MAX_NATIVE_FRAMES, RESERVED_FRAMES};
@@ -49,7 +50,7 @@ pub struct Profiler {
     runtime_stub: CodeCache,
     call_stub_begin: *const i8,
     call_stub_end: *const i8,
-    frame_deeps: usize,
+    max_frames: usize,
     jthreads: Mutex<HashMap<u64, ThreadInfo>>,
 }
 
@@ -60,8 +61,8 @@ impl Profiler {
         let queue = CircleQueue::new();
         let mut calltrace_buffer = Vec::new();
         let walker_trace = WalkerTrace::new();
-        let frame_deeps = MAX_FRAMES;
-        let deeps = frame_deeps + MAX_NATIVE_FRAMES + RESERVED_FRAMES;
+        let max_frames = MAX_FRAMES;
+        let deeps = max_frames + MAX_NATIVE_FRAMES + RESERVED_FRAMES;
         (0..CONCURRENCY_LEVEL).for_each(
             |_| calltrace_buffer.push(vec![Default::default(); deeps])
         );
@@ -75,7 +76,7 @@ impl Profiler {
             sigprof,
             running,
             walker_trace,
-            frame_deeps,
+            max_frames,
             runtime_stub,
             call_stub_begin: ptr::null(),
             call_stub_end: ptr::null(),
@@ -196,27 +197,36 @@ impl Profiler {
         self.convert_native_trace(chan, idx)
     }
 
+    /// get the java async trace, call the AsyncGetCallTrace
     unsafe fn get_java_async_trace(
         &mut self, 
         ucontext: *mut libc::c_void, 
         idx: usize,
         num_frames: usize,
-    ) {
+    ) -> i32 {
         let vm = get_vm_mut();
         let jni = vm.get_jni_env();
         if jni.is_none() {
-            return;
+            //Not java thread.
+            return 0;
         }
+        let mut curr_frame = StackFrame::new(ucontext as _);
+        // when exit the block will restore the pc, sp, fp by drop
+        let _saved_frame = curr_frame.save_frame(true);
         let buf = self
             .calltrace_buffer
             .get_mut(idx)
             .expect("get idx calltrace buffer fail");
         let jni = jni.unwrap();
         let frame_buf_ptr = buf.as_mut_ptr().add(num_frames);
-        let mut jvmti_trace = JVMPICallTrace::new(jni.inner(), frame_buf_ptr);
-        let max_deeps = self.frame_deeps;
-        (vm.asgc())(&mut jvmti_trace as *mut _, max_deeps as _, ucontext);
-        //TODO!
+        let mut call_trace = JVMPICallTrace::new(jni.inner(), frame_buf_ptr);
+        //call AsyncGetCallTrace.
+        (vm.asgc())(&mut call_trace as *mut _, self.max_frames as _, ucontext);
+
+        if call_trace.num_frames > 0 {
+            return call_trace.num_frames;
+        }
+        0
     }
 
     fn get_lock_index(&self, tid: u32) -> u32 {
@@ -234,6 +244,7 @@ impl Profiler {
                 let nm = self.find_native_method(*cc as _);
                 nm.map(|nm| {
                     let name_ptr = nm.name_ptr();
+                    println!("{}", nm.name_str());
                     prev_call = name_ptr;
                     JVMPICallFrame {
                         bci: ASGCTCallFrameType::BCINativeFrame.into(),
