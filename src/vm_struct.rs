@@ -286,7 +286,6 @@ impl VMStruct {
         if vm.hotspot_version() == 8 {
             let lock_fn = VM::find_so_symbol(c_str!("_ZN7Monitor28lock_without_safepoint_checkEv"));
             let unlock_fn = VM::find_so_symbol(c_str!("_ZN7Monitor6unlockEv"));
-            println!("{lock_fn:p}  {unlock_fn:p}");
             self.lock_fn = Some(mem::transmute(&lock_fn));
             self.unlock_fn = Some(mem::transmute(&unlock_fn));
         }

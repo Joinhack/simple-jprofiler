@@ -1,5 +1,5 @@
 use crate::ctrl_svr::CtrlSvr;
-use crate::jvmti::{JNIEnv, JNIEnvPtr, JavaVM, JvmtiEnv, JvmtiEnvPtr, JvmtiEventCallbacks, self};
+use crate::jvmti::{JNIEnv, JNIEnvPtr, JavaVM, JvmtiEnv, JvmtiEnvPtr, JvmtiEventCallbacks,};
 use crate::jvmti_native::{
     jfieldID, jint, jmethodID, jthread, jvmtiAddrLocationMap, JVMTI_ENABLE,
     JVMTI_EVENT_COMPILED_METHOD_LOAD, JVMTI_EVENT_DYNAMIC_CODE_GENERATED, JVMTI_EVENT_THREAD_END,
@@ -10,6 +10,7 @@ use crate::vm_struct::{CodeHeap, VMStruct};
 use crate::{c_str, check_null, get_vm_mut, jni_method, log_error, get_vm, cstr_2_str};
 use std::mem::{self, MaybeUninit};
 use std::ptr::{self, null, null_mut};
+use std::ffi::CStr;
 
 pub const JNI_VERSION_1_6: i32 = 0x00010006;
 pub const JNI_EDETACHED: i32 = -2;
@@ -317,9 +318,6 @@ impl VM {
     fn resovle_hotspot_version(&mut self) {
         let mut prop = null_mut();
         self.jvmti.get_system_property(c_str!("java.vm.version"), &mut prop).unwrap();
-        unsafe {
-            libc::printf(c_str!("%s"), prop);
-        }
         let prop_str = cstr_2_str!(prop);
         if prop_str.starts_with("25.") {
             self.hotspot_version = 8;

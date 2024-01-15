@@ -1,9 +1,12 @@
 use std::{sync::Mutex, collections::HashMap, ptr};
+use std::ffi::CStr;
+
+use cpp_demangle::Symbol;
 
 use crate::{
     profiler::ThreadInfo, 
     vm::{
-        JVMPICallFrame, BCI_THREADID, BCI_NATIVE_FRAME, BCI_ALLOC_OUTSIDE_TLAB, BCI_LOCK, BCI_PARK
+        JVMPICallFrame, BCI_THREADID, BCI_NATIVE_FRAME
     }, 
     code_cache::CodeBlob, 
     jvmti_native::{jmethodID, jclass}, 
@@ -38,6 +41,8 @@ impl<'a> FrameName<'a> {
                     self.java_class_name(&class_sig[1..class_sig.len() - 1].as_bytes());
                     self.name.push(b'.');
                     self.name.extend_from_slice(&method_name.as_bytes());
+                    let method_sig = cstr_2_str!(method_sig_ptr);
+                    self.name.extend_from_slice(method_sig.as_bytes());
                 }
             }
         }
@@ -79,10 +84,16 @@ impl<'a> FrameName<'a> {
         }
     }
 
-    pub fn name(
-        &mut self, 
-        frame: &JVMPICallFrame, 
-    ) -> &str
+    fn decode_native_name(&mut self, name: &[u8]) {
+        if let Ok(symbol) = Symbol::new(name) {
+            let symbol_str = symbol.to_string();
+            self.name.extend_from_slice(symbol_str.as_bytes());
+        } else {
+            self.name.extend_from_slice(name);
+        }
+    }
+
+    pub fn name(&mut self, frame: &JVMPICallFrame) -> &str
     {
         self.name.truncate(0);
         match frame.bci {
@@ -97,11 +108,18 @@ impl<'a> FrameName<'a> {
             }
             BCI_NATIVE_FRAME => {
                 let code_blob: &CodeBlob = unsafe {&*(frame.method_id as *const CodeBlob)};
-                self.name.extend_from_slice(code_blob.name_str().as_bytes())
+                let mname = code_blob.name_str().as_bytes();
+                if mname[0] == b'_' && mname[1] == b'Z' {
+                    self.decode_native_name(mname);
+                } else {
+                    self.name.extend_from_slice(mname);
+                }
             }
             _ => {
                 unsafe {
-                    self.java_method_name(frame.method_id)
+                    if let None = self.java_method_name(frame.method_id) {
+                        self.name.extend_from_slice(b"[jvmtiError]");
+                    }
                 };
             }
         };
