@@ -82,6 +82,67 @@ impl JvmtiEnv {
         }
     }
 
+    pub fn add_capabilities(
+        &self,
+        caps: &jvmtiCapabilities,
+    ) -> Option<u32> {
+        unsafe {
+            (**self.0)
+                .AddCapabilities
+                .map(|c| c(self.0, caps as _))
+        }
+    }
+
+    pub fn generate_events(
+        &self,
+        event: jvmtiEvent,
+    ) -> Option<u32> {
+        unsafe {
+            (**self.0)
+                .GenerateEvents
+                .map(|c| c(self.0, event))
+        }
+    }
+
+    pub fn get_method_name(
+        &self,
+        method_id: jmethodID,
+        name_ptr: *mut *mut libc::c_char,
+        sign_ptr: *mut *mut libc::c_char,
+        gen_ptr: *mut *mut libc::c_char,
+    ) -> Option<u32> {
+        unsafe {
+            (**self.0)
+                .GetMethodName
+                .map(|c| c(self.0, method_id, name_ptr, sign_ptr, gen_ptr))
+        }
+    }
+
+    pub fn get_method_declaring_class(
+        &self,
+        method_id: jmethodID,
+        declaring_class_ptr: *mut jclass,
+    ) -> Option<u32> {
+        unsafe {
+            (**self.0)
+                .GetMethodDeclaringClass
+                .map(|c| c(self.0, method_id, declaring_class_ptr))
+        }
+    }
+
+    pub fn get_class_signature(
+        &self,
+        class: jclass,
+        name_ptr: *mut *mut i8,
+        generic_ptr: *mut *mut i8,
+    ) -> Option<u32> {
+        unsafe {
+            (**self.0)
+                .GetClassSignature
+                .map(|c| c(self.0, class, name_ptr, generic_ptr))
+        }
+    }
+
     pub fn deallocate(&self, p: *const i8) -> u32 {
         unsafe { (**self.0).Deallocate.map(|d| d(self.0, p as _)).unwrap() }
     }
@@ -100,6 +161,44 @@ impl JvmtiEnv {
             (**self.0)
                 .SetEventNotificationMode
                 .map(|s| s(self.0, mode, event_type, event_thread))
+        }
+    }
+
+    pub fn get_system_property(
+        &self,
+        name: *const i8,
+        prop: *mut *mut i8,
+    ) -> Option<u32> {
+        unsafe {
+            (**self.0)
+                .GetSystemProperty
+                .map(|s| s(self.0, name, prop))
+        }
+    }
+
+
+    pub fn get_loaded_classes(
+        &self,
+        count: *mut jint,
+        class: *mut *mut jclass,
+    ) -> Option<u32> {
+        unsafe {
+            (**self.0)
+                .GetLoadedClasses
+                .map(|s| s(self.0, count, class))
+        }
+    }
+
+    pub fn get_class_methods(
+        &self,
+        class: jclass,
+        count: *mut jint,
+        method: *mut *mut jmethodID,
+    ) -> Option<u32> {
+        unsafe {
+            (**self.0)
+                .GetClassMethods
+                .map(|s| s(self.0, class, count, method))
         }
     }
 

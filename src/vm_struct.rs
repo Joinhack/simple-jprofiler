@@ -2,23 +2,24 @@ mod code_heap;
 mod nmethod;
 mod vmthread;
 pub use code_heap::CodeHeap;
+use libc::uintptr_t;
 use std::{
     ffi::CStr,
     fmt::Display,
     ptr,
-    sync::atomic::{AtomicPtr, Ordering},
+    sync::atomic::{AtomicPtr, Ordering}, mem,
 };
 pub use vmthread::VMThread;
-
-use libc::uintptr_t;
 
 use crate::{
     c_str,
     code_cache::CodeCache,
     get_vm_mut,
     jvmti::JNIEnv,
-    jvmti_native::{jfieldID, jthread},
+    jvmti_native::{jfieldID, jthread}, get_vm, vm::VM,
 };
+
+type LockFn = unsafe extern "C" fn (*const libc::c_void);
 
 pub struct VMStruct {
     klass_name_offset: i32,
@@ -74,7 +75,10 @@ pub struct VMStruct {
     eetop: jfieldID,
     has_class_names: bool,
     has_method_structs: bool,
+    has_class_loader_data: bool,
     has_native_thread_id: bool,
+    lock_fn: Option<LockFn>,
+    unlock_fn: Option<LockFn>,
 }
 
 impl Display for VMStruct {
@@ -237,7 +241,10 @@ impl VMStruct {
             code_heap_low: AtomicPtr::new(ptr::null_mut()),
             code_heap_high: AtomicPtr::new(ptr::null_mut()),
             has_native_thread_id: false,
+            has_class_loader_data: false,
             thread_env_offset: -1,
+            lock_fn: None,
+            unlock_fn: None,
         }
     }
 
@@ -270,6 +277,18 @@ impl VMStruct {
         self.libjvm = libjvm;
         unsafe {
             self.initial_offset();
+            self.init_jvm_functions();
+        }
+    }
+
+    unsafe fn init_jvm_functions(&mut self) {
+        let vm = get_vm();
+        if vm.hotspot_version() == 8 {
+            let lock_fn = VM::find_so_symbol(c_str!("_ZN7Monitor28lock_without_safepoint_checkEv"));
+            let unlock_fn = VM::find_so_symbol(c_str!("_ZN7Monitor6unlockEv"));
+            println!("{lock_fn:p}  {unlock_fn:p}");
+            self.lock_fn = Some(mem::transmute(&lock_fn));
+            self.unlock_fn = Some(mem::transmute(&unlock_fn));
         }
     }
 
@@ -512,6 +531,14 @@ impl VMStruct {
         {
             self.code_heap = [ptr::null(); 3];
         }
+        if self.class_loader_data_offset >= 0
+            && self.class_loader_data_next_offset as usize == std::mem::size_of::<usize>()*8 + 8
+            && self.methods_offset >= 0
+            && !self.klass.is_null()
+            && self.lock_fn.is_some()
+            && self.unlock_fn.is_some() {
+            self.has_class_loader_data = true;
+        }
     }
 
     #[inline(always)]
@@ -522,6 +549,11 @@ impl VMStruct {
     #[inline(always)]
     pub fn has_native_thread_id(&self) -> bool {
         self.has_native_thread_id
+    }
+
+    #[inline(always)]
+    pub fn has_class_loader_data(&self) -> bool {
+        self.has_class_loader_data
     }
 
     #[inline(always)]

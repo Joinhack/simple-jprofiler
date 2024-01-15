@@ -1,3 +1,4 @@
+mod vm;
 mod circle_queue;
 mod code_cache;
 mod ctrl_svr;
@@ -12,7 +13,7 @@ mod spinlock;
 mod stack_frame;
 mod stack_walker;
 mod symbol_parser;
-mod vm;
+mod frame_name;
 mod vm_struct;
 mod walker_trace;
 
@@ -61,7 +62,7 @@ pub extern "C" fn Agent_OnLoad(
         }
         let vm_inst = VM::new(jvm, unsafe { jvmti.assume_init() }.into());
         set_vm(vm_inst);
-        get_vm_mut().initial();
+        get_vm_mut().initial(false);
     });
     return 0;
 }

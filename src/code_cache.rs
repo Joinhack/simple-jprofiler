@@ -42,11 +42,6 @@ impl NativeFunc {
     }
 
     #[inline(always)]
-    pub fn name_ptr(&self) -> *const u8 {
-        self.name.as_ptr()
-    }
-
-    #[inline(always)]
     pub fn name_mut(&mut self) -> &mut [u8] {
         &mut self.name
     }
@@ -66,11 +61,6 @@ impl CodeBlob {
     #[inline(always)]
     pub fn name_str(&self) -> &str {
         self.name.name_str()
-    }
-
-    #[inline(always)]
-    pub fn name_ptr(&self) -> *const u8 {
-        self.name.name_ptr()
     }
 
     fn cmp(&self, other: &Self) -> Ordering {

@@ -41,6 +41,7 @@ macro_rules! check_null {
 macro_rules! cstr_2_str {
     ($e: expr) => {
         unsafe {
+            use std::ffi::CStr;
             let cs = CStr::from_ptr($e);
             let bs = cs.to_bytes();
             std::str::from_utf8_unchecked(bs)

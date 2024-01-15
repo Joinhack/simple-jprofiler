@@ -1,21 +1,25 @@
+use core::num;
 use std::collections::HashMap;
 use std::ffi::CStr;
 use std::mem::MaybeUninit;
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 use std::{mem, ptr};
-use std::{sync::atomic::AtomicBool, time::Duration};
+use std::sync::atomic::AtomicBool;
 
 use crate::cstr_2_str;
+use crate::frame_name::FrameName;
 use crate::jvmti::{JNIEnv, JvmtiEnv, JVMTI_THREAD_NORM_PRIORITY};
-use crate::jvmti_native::{jthread, jvmtiThreadInfo};
+use crate::jvmti_native::{jthread, jvmtiThreadInfo, jmethodID};
 use crate::os::OS;
 use crate::signal_prof::{SigactionFn, SignalProf};
 use crate::spinlock::SpinLock;
 use crate::stack_frame::StackFrame;
 use crate::stack_walker::{StackContext, StackWalker};
 use crate::symbol_parser::SymbolParser;
-use crate::vm::{ASGCTCallFrameType, JVMPICallFrame, JVMPICallTrace, MAX_FRAMES, MAX_NATIVE_FRAMES, RESERVED_FRAMES};
+use crate::vm::{
+    JVMPICallFrame, JVMPICallTrace, MAX_FRAMES, MAX_NATIVE_FRAMES, RESERVED_FRAMES, BCI_THREADID, BCI_NATIVE_FRAME
+};
 use crate::vm_struct::VMThread;
 use crate::walker_trace::WalkerTrace;
 use crate::{
@@ -27,15 +31,13 @@ use crate::{circle_queue::CircleQueue, get_vm_mut, log_info, VM};
 const DEFAULT_MIN_SIGNAL: u32 = 100_000_000;
 const DEFAULT_MAX_SIGNAL: u32 = 500_000_000;
 
-const STATUS_CHECK_PERIOD: u32 = 100;
-
 pub const MAX_CODE_CACHE_ARRAY: u32 = 2048;
 
 const CONCURRENCY_LEVEL: usize = 16;
 
-struct ThreadInfo {
-    jthread_id: u64,
-    name: String,
+pub struct ThreadInfo {
+    pub jthread_id: u64,
+    pub name: String,
 }
 
 pub struct Profiler {
@@ -137,19 +139,6 @@ impl Profiler {
         get_vm_mut().update_heap_bounds(address, address.add(len as _));
     }
 
-    fn sleep_peroid(&self, d: u32) {
-        let loop_times = d / STATUS_CHECK_PERIOD;
-        let remainder = d % STATUS_CHECK_PERIOD;
-        let mut count = 0;
-        while count < loop_times && self.running.load(Ordering::Acquire) {
-            std::thread::sleep(Duration::from_micros(STATUS_CHECK_PERIOD as _));
-            count += 1;
-        }
-        if remainder > 0 {
-            std::thread::sleep(Duration::from_micros(STATUS_CHECK_PERIOD as _));
-        }
-    }
-
     #[inline(always)]
     pub fn find_native_method(&self, pc: *const i8) -> Option<&CodeBlob> {
         self.find_library_by_address(pc)
@@ -178,10 +167,28 @@ impl Profiler {
         
         let mut java_ctx = StackContext::new();
         unsafe {
-            let num_frames = self.get_native_trace(ucontext, lock_idx, &mut java_ctx);
-            self.get_java_async_trace(ucontext, lock_idx, num_frames);
+            let frame_buff = self
+                .calltrace_buffer
+                .get_mut(lock_idx)
+                .expect("get idx calltrace buffer fail");
+            let frame_buf_ptr = frame_buff.as_mut_ptr();
+            let num_frames = self.get_native_trace(ucontext, frame_buf_ptr, &mut java_ctx);
+            let num_frames = num_frames + self.get_java_async_trace(ucontext, frame_buf_ptr.add(num_frames));
+            let num_frames = num_frames + self.make_frame(frame_buf_ptr.add(num_frames), BCI_THREADID, tid as _);
+            self.walk_frames(frame_buf_ptr, num_frames);
         }
         self.locks.get(lock_idx).map(|l| l.unlock());
+    }
+
+    unsafe fn make_frame(
+        &mut self, 
+        frame_buf_ptr: *mut JVMPICallFrame,
+        frame_type: i32,
+        methid: jmethodID
+    ) -> usize {
+        (*frame_buf_ptr).bci = frame_type.into();
+        (*frame_buf_ptr).method_id = methid;
+        1
     }
 
     /// walk the native call trace
@@ -189,21 +196,20 @@ impl Profiler {
     unsafe fn get_native_trace(
         &mut self,
         ucontext: *mut libc::c_void, 
-        idx: usize,
+        frame_buf_ptr: *mut JVMPICallFrame,
         java_ctx: &mut StackContext,
     ) -> usize {
         let mut call_chan = [ptr::null(); MAX_NATIVE_FRAMES];
         let chan = StackWalker::walk_frame(ucontext as _, &mut call_chan, java_ctx);
-        self.convert_native_trace(chan, idx)
+        self.convert_native_trace(chan, frame_buf_ptr)
     }
 
     /// get the java async trace, call the AsyncGetCallTrace
     unsafe fn get_java_async_trace(
         &mut self, 
         ucontext: *mut libc::c_void, 
-        idx: usize,
-        num_frames: usize,
-    ) -> i32 {
+        frame_buf_ptr: *mut JVMPICallFrame
+    ) -> usize {
         let vm = get_vm_mut();
         let jni = vm.get_jni_env();
         if jni.is_none() {
@@ -213,18 +219,12 @@ impl Profiler {
         let mut curr_frame = StackFrame::new(ucontext as _);
         // when exit the block will restore the pc, sp, fp by drop
         let _saved_frame = curr_frame.save_frame(true);
-        let buf = self
-            .calltrace_buffer
-            .get_mut(idx)
-            .expect("get idx calltrace buffer fail");
         let jni = jni.unwrap();
-        let frame_buf_ptr = buf.as_mut_ptr().add(num_frames);
         let mut call_trace = JVMPICallTrace::new(jni.inner(), frame_buf_ptr);
         //call AsyncGetCallTrace.
         (vm.asgc())(&mut call_trace as *mut _, self.max_frames as _, ucontext);
-
         if call_trace.num_frames > 0 {
-            return call_trace.num_frames;
+            return call_trace.num_frames as _;
         }
         0
     }
@@ -236,30 +236,33 @@ impl Profiler {
         (tid as usize % CONCURRENCY_LEVEL) as u32
     }
 
-    fn convert_native_trace(&mut self, call_chan: &[*const ()], idx: usize) -> usize {
+    unsafe fn convert_native_trace(
+        &mut self, 
+        call_chan: &[*const ()], 
+        frame_buf_ptr: *mut JVMPICallFrame
+    ) -> usize {
         let mut prev_call = ptr::null();
-        let call_trace = call_chan
-            .iter()
-            .filter_map(|cc| {
-                let nm = self.find_native_method(*cc as _);
-                nm.map(|nm| {
-                    let name_ptr = nm.name_ptr();
-                    println!("{}", nm.name_str());
-                    prev_call = name_ptr;
-                    JVMPICallFrame {
-                        bci: ASGCTCallFrameType::BCINativeFrame.into(),
-                        method_id: name_ptr as _,
-                    }
-                })
-            })
-            .collect::<Vec<_>>();
-        let buf = self
-            .calltrace_buffer
-            .get_mut(idx)
-            .expect("get idx calltrace buffer fail");
-        let len = call_trace.len();
-        buf[0..len].copy_from_slice(&call_trace);
-        len
+        let mut num_frames = 0;
+        for cc in call_chan {
+            let nm = self.find_native_method(*cc as _);
+            if let Some(nm) = nm {
+                prev_call = nm as _;
+                let frame_ptr = frame_buf_ptr.add(num_frames);
+                num_frames += 1;
+                (*frame_ptr).bci = BCI_NATIVE_FRAME;
+                (*frame_ptr).method_id = nm as *const _  as _;
+            }
+        }
+        num_frames
+    }
+
+    unsafe fn walk_frames(&self, frame_buf_ptr: *mut JVMPICallFrame, nums: usize) {
+        let mut frame_name = FrameName::new(&self.jthreads);
+        for idx in 0..nums {
+            let name = frame_name.name(&(*frame_buf_ptr.add(idx)));
+            println!("{name}");
+        }
+        println!("----------------------------------------------");
     }
 
     pub unsafe fn update_thread_info(&mut self, jvmti: JvmtiEnv, jni: JNIEnv, thread: jthread) {
