@@ -232,6 +232,7 @@ impl CodeCache {
     }
 }
 
+#[allow(unused)]
 mod test {
     use super::*;
     use crate::c_str;

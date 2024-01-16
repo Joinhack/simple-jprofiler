@@ -1,3 +1,4 @@
+#![allow(unused)]
 use std::{
     alloc::{self, Layout},
     mem,

@@ -1,3 +1,4 @@
+#![allow(unused)]
 use crate::ctrl_svr::CtrlSvr;
 use crate::jvmti::{JNIEnv, JNIEnvPtr, JavaVM, JvmtiEnv, JvmtiEnvPtr, JvmtiEventCallbacks,};
 use crate::jvmti_native::{
@@ -9,7 +10,7 @@ use crate::profiler::Profiler;
 use crate::vm_struct::{CodeHeap, VMStruct};
 use crate::{c_str, check_null, get_vm_mut, jni_method, log_error, get_vm, cstr_2_str};
 use std::mem::{self, MaybeUninit};
-use std::ptr::{self, null, null_mut};
+use std::ptr;
 use std::ffi::CStr;
 
 pub const JNI_VERSION_1_6: i32 = 0x00010006;
@@ -204,7 +205,7 @@ impl VM {
             //todo!()
         }
         let mut method_count = 0;
-        let mut methods: *mut jmethodID = null_mut();
+        let mut methods: *mut jmethodID = ptr::null_mut();
         if let Some(0) = jvmti.get_class_methods(class, &mut method_count, &mut methods) {
             jvmti.deallocate(methods as _);
         }
@@ -212,7 +213,7 @@ impl VM {
 
     fn load_all_method_ids(&self, jvmti: &JvmtiEnv, jni: &JNIEnv) {
         let mut count = 0;
-        let mut classes = null_mut();
+        let mut classes = ptr::null_mut();
         if let Some(0) = jvmti.get_loaded_classes(&mut count, &mut classes) {
             for i in 0..count {
                 unsafe {
@@ -316,7 +317,7 @@ impl VM {
     }
 
     fn resovle_hotspot_version(&mut self) {
-        let mut prop = null_mut();
+        let mut prop = ptr::null_mut();
         self.jvmti.get_system_property(c_str!("java.vm.version"), &mut prop).unwrap();
         let prop_str = cstr_2_str!(prop);
         if prop_str.starts_with("25.") {

@@ -1,5 +1,5 @@
+#![allow(unused)]
 use std::{ops::Add, ptr};
-
 const DW_STACK_SLOT: i32 = std::mem::size_of::<*const ()>() as _;
 
 #[cfg(target_pointer_width = "64")]

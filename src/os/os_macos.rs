@@ -10,7 +10,6 @@ pub struct OSImpl;
 
 extern "C" {
     fn mach_port_deallocate(_: libc::c_uint, _: u32) -> libc::c_int;
-    fn native_send_thread_signal(tid: u32, signal: u32) -> u32;
 }
 
 impl OSImpl {

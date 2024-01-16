@@ -1,4 +1,3 @@
-use core::num;
 use std::collections::HashMap;
 use std::ffi::CStr;
 use std::mem::MaybeUninit;
@@ -259,8 +258,11 @@ impl Profiler {
     unsafe fn walk_frames(&self, frame_buf_ptr: *mut JVMPICallFrame, nums: usize) {
         let mut frame_name = FrameName::new(&self.jthreads);
         for idx in 0..nums {
-            let name = frame_name.name(&(*frame_buf_ptr.add(idx)));
-            println!("{name}");
+            let frame = &(*frame_buf_ptr.add(idx));
+            let name = frame_name.name(frame);
+            if frame.bci != BCI_THREADID {
+                println!("{name}");
+            }
         }
         println!("----------------------------------------------");
     }

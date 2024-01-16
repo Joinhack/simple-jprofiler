@@ -1,3 +1,4 @@
+#![allow(unused)]
 use super::uintptr_t;
 
 macro_rules! regm {

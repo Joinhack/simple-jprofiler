@@ -1,4 +1,4 @@
-use std::{usize, ptr};
+#![allow(unused)]
 
 #[cfg(target_pointer_width = "64")]
 mod stack_frame_x64;
