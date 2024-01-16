@@ -1,3 +1,4 @@
+#![allow(unused)]
 use crate::log_error;
 use std::mem::MaybeUninit;
 use std::ptr;
