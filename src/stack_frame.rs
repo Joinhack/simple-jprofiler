@@ -26,13 +26,13 @@ impl<'a> Drop for SavedFrame<'a> {
 }
 
 pub struct StackFrame {
-    ucontext: *const libc::ucontext_t,
+    ucontext: *mut libc::ucontext_t,
     inner: StackFrameImpl,
 }
 
 impl StackFrame {
     #[inline(always)]
-    pub fn new(ucontext: *const libc::ucontext_t) -> Self {
+    pub fn new(ucontext: *mut libc::ucontext_t) -> Self {
         let inner = StackFrameImpl::new(ucontext);
         Self { ucontext, inner }
     }

@@ -31,6 +31,11 @@ impl OSThreadList {
     pub fn next(&mut self) -> Option<u32> {
         self.0.next()
     }
+
+    #[inline(always)]
+    pub fn size(&mut self) -> u32 {
+        self.0.size()
+    }
 }
 
 impl OS {
@@ -45,5 +50,30 @@ impl OS {
 
     pub fn thread_state(tid: u32) -> ThreadState {
         unsafe { OSImpl::thread_state(tid) }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::OSThreadList;
+
+    #[test]
+    fn test_threads() {
+        let mut list = OSThreadList::new();
+        let _size = list.size();
+        let mut count = 0;
+        while let Some(tid) = list.next() {
+            assert_ne!(tid, 0);
+            println!("{tid}");
+            count += 1;
+        }
+
+        //test rewind
+        list.rewind();
+        count = 0;
+        while let Some(tid) = list.next() {
+            assert_ne!(tid, 0);
+            count += 1;
+        }
     }
 }

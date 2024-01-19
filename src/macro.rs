@@ -20,6 +20,15 @@ macro_rules! log_warn {
 }
 
 #[macro_export]
+macro_rules! vec_append_slice {
+    ($ident: ident, $($expr: expr),*) => {
+        $(
+            $ident.extend_from_slice($expr);
+        )*
+    }
+}
+
+#[macro_export]
 macro_rules! c_str {
     ($s: expr) => {
         concat!($s, "\0").as_ptr() as *const std::ffi::c_char

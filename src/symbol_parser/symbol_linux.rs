@@ -1,11 +1,11 @@
 use std::{
     collections::HashSet,
-    fs,
-    io::{BufRead, BufReader},
-    ptr,
+    fs::{self, OpenOptions},
+    io::{BufRead, BufReader, Seek, SeekFrom},
+    ptr::{self, null_mut}, os::fd::AsRawFd, ffi::CStr, mem,
 };
 
-use crate::{code_cache::CodeCache, profiler::MAX_CODE_CACHE_ARRAY};
+use crate::{code_cache::CodeCache, profiler::MAX_CODE_CACHE_ARRAY, log_warn, vec_append_slice};
 
 const SHN_UNDEF: u8 = 0;
 const ET_EXEC: u16 = 2;
@@ -36,6 +36,51 @@ const DT_TEXTREL: i64 = 22;
 const DT_JMPREL: i64 = 23;
 const DT_RELACOUNT: i64 = 0x6ffffff9;
 const DT_RELCOUNT: i64 = 0x6ffffffa;
+
+const SHT_PROGBITS: u32 = 1;
+const SHT_SYMTAB: u32 = 2;
+const SHT_RELA: u32 = 4;
+const SHT_NOTE: u32 = 4;
+const SHT_REL: u32 = 9;
+const SHT_DYNSYM: u32 = 9;
+
+#[cfg(any(target_arch = "x86_64", target_arch = "i386"))]
+mod x86_64_i386 {
+    pub const PLT_ENTRY_SIZE: u32 = 16;
+    pub const PLT_HEADER_SIZE: u32 = 16;
+}
+
+#[cfg(any(target_arch = "x86_64", target_arch = "i386"))]
+use x86_64_i386::*;
+
+
+#[cfg(any(target_arch = "arm", target_arch = "thumb"))]
+mod arm {
+    pub const PLT_ENTRY_SIZE: u32 = 12;
+    pub const PLT_HEADER_SIZE: u32 = 20;
+}
+#[cfg(any(target_arch = "arm", target_arch = "thumb"))]
+use arm::*;
+
+
+#[cfg(target_arch = "aarch64")]
+mod aarch64 {
+    const PLT_ENTRY_SIZE: u32 = 12;
+    pub const PLT_HEADER_SIZE: u32 = 32;
+}
+#[cfg(target_arch = "aarch64")]
+use aarch64::*;
+
+
+#[cfg(target_arch = "PPC64")]
+mod ppc64 {
+    pub const PLT_ENTRY_SIZE: u32 = 24;
+    pub const PLT_HEADER_SIZE: u32 = 24;
+}
+
+#[cfg(target_arch = "PPC64")]
+use ppc64::*;
+
 
 #[cfg(target_pointer_width = "64")]
 mod target_64 {
@@ -83,6 +128,7 @@ mod target_64 {
     pub type ElfSymbol = libc::Elf64_Sym;
     pub type ElfRelocation = Elf64_Rel;
     pub type ElfDyn = Elf64_Dyn;
+    pub const ELF_R_SYM_BIT: u32 = 32;
 }
 
 #[cfg(target_pointer_width = "64")]
@@ -135,10 +181,17 @@ mod target_32 {
     pub type ElfSymbol = libc::Elf32_Sym;
     pub type ElfRelocation = Elf32_Rel;
     pub type ElfDyn = libc::Elf32_Dyn;
+    pub const ELF_R_SYM_BIT: u32 = 8;
 }
 
 #[cfg(target_pointer_width = "32")]
 use target_32::*;
+
+macro_rules! ELF_R_SYM {
+    ($p: expr) => {
+        (($p) >> ELF_R_SYM_BIT)
+    };
+}
 
 struct MemoryMapDesc<'a> {
     addr: &'a [u8],
@@ -216,6 +269,12 @@ impl<'a> MemoryMapDesc<'a> {
         self.file.len() == 0
     }
 
+    pub fn file(&self) -> &str {
+        unsafe {
+            std::str::from_utf8_unchecked(self.file)
+        }
+    }
+
     pub fn dev(&self) -> u64 {
         let dev = self.dev;
         let (maj, min) = split!(dev, b':');
@@ -282,18 +341,22 @@ impl SymbolParserImpl {
                     image_end,
                 );
                 let inode = desc.inode();
-                if inode != 0 {
-                    // Do not parse the same executable twice, e.g. on Alpine Linux
-                    if self.parsed_inode.insert(desc.dev() << 32 | inode) {
-                        image_base = unsafe { image_base.offset(-(desc.offs() as isize)) };
-                        if image_base >= last_readable_base {
-                            // ElfParser::parse_program_headers()
+                unsafe {
+                    if inode != 0 {
+                        // Do not parse the same executable twice, e.g. on Alpine Linux
+                        if self.parsed_inode.insert(desc.dev() << 32 | inode) {
+                            image_base = unsafe { image_base.offset(-(desc.offs() as isize)) };
+                            if image_base >= last_readable_base {
+                                ElfParser::parse_program_headers(&mut cc, image_base, image_end);
+                            }
+                            ElfParser::parse_file(&mut cc, image_base, desc.file(), true);
                         }
-                        todo!()
+                    } else if desc.file == b"[vdso]" {
+                        ElfParser::parse_mem(&mut cc, image_base);
                     }
-                } else if desc.file == b"[vdso]" {
-                    todo!()
                 }
+                cc.sort();
+                code_caches.push(cc);
             }
             line.truncate(0);
         }
@@ -304,13 +367,13 @@ struct ElfParser<'a, 'b> {
     cc: &'a mut CodeCache,
     base: *const i8,
     header: *const ElfHeader,
-    file_name: &'b [u8],
+    file_name: Option<&'b [u8]>,
     sections: *const i8,
     vaddr_diff: *const i8,
 }
 
 impl<'a, 'b> ElfParser<'a, 'b> {
-    fn new(cc: &'a mut CodeCache, base: *const i8, addr: *const i8, file_name: &'b [u8]) -> Self {
+    fn new(cc: &'a mut CodeCache, base: *const i8, addr: *const i8, file_name: Option<&'b [u8]>) -> Self {
         unsafe {
             let header = addr as *const ElfHeader;
             let sections = addr.add((*header).e_shoff as _);
@@ -326,6 +389,21 @@ impl<'a, 'b> ElfParser<'a, 'b> {
         }
     }
 
+    unsafe fn find_section(&mut self, typ: u32, sec_name: &[u8]) -> *const ElfSection  {
+        let strtab = self.at_section(self.section((*self.header).e_shstrndx as _));
+        for i in 0..(*self.header).e_shnum {
+            let sec = self.section(i as _);
+            if typ == (*sec).sh_type && (*sec).sh_name != 0 {
+                let name_ptr = strtab.offset((*sec).sh_name as _) as *const i8;
+                let name = CStr::from_ptr(name_ptr).to_bytes();
+                if name == sec_name {
+                    return sec;
+                }
+            }
+        }
+        return ptr::null();
+    }
+
     #[inline(always)]
     unsafe fn valid_header(&self) -> bool {
         let elf_header = &*self.header;
@@ -338,6 +416,183 @@ impl<'a, 'b> ElfParser<'a, 'b> {
             && ident[5] == libc::ELFDATA2LSB
             && ident[6] == libc::EV_CURRENT as _
             && elf_header.e_shstrndx != SHN_UNDEF as _
+    }
+
+    unsafe fn parse_file(cc: &mut CodeCache, base: *const i8, file_n: &str, debug: bool) -> bool {
+        let mut file = match OpenOptions::new()
+            .read(true)
+            .open(file_n) {
+            Ok(f) => f,
+            Err(_) => return false,
+        };
+        let file_len = file.seek(SeekFrom::Start(0)).expect("seek error");
+        let fd = file.as_raw_fd();
+        let addr = libc::mmap(null_mut(), file_len as _, libc::PROT_READ, libc::MAP_PRIVATE, fd, 0);
+        drop(file);
+        if addr == libc::MAP_FAILED {
+            log_warn!("could not parse the symbol from {file_n}");
+        } else {
+            let mut parser = ElfParser::new(cc, base, addr as _, Some(file_n.as_bytes()));
+            if parser.valid_header() {
+                parser.load_symbols(debug);
+            }
+            libc::munmap(addr, file_len as _);
+        }
+        true
+    }
+
+    unsafe fn section(&self, index: isize) -> *const ElfSection {
+        self.sections.offset(index*((*self.header).e_shentsize as isize)) as _
+    }
+
+    unsafe fn at_section(&self, s: *const ElfSection) -> *const i8 {
+        (self.header as *const i8).add((*s).sh_offset as _)
+    }
+
+    unsafe fn add_plt_symbols(&mut self) {
+        let plt = self.find_section(SHT_PROGBITS, b".plt");
+        let mut reltab = self.find_section(SHT_RELA, b".rela.plt");
+        if reltab.is_null() {
+            reltab = self.find_section(SHT_REL, b".rel.plt");
+        }
+        if !plt.is_null() && !reltab.is_null() {
+            self.add_relocation_symbols(reltab, self.base.add((*plt).sh_offset as usize + PLT_HEADER_SIZE as usize))
+        }
+    }
+
+    unsafe fn load_symbols(&mut self, debug: bool) {
+        //look debug symbol in original so.
+        let section = self.find_section(SHT_SYMTAB, b".symtab");
+        if !section.is_null() {
+            self.load_symbol_table(section);
+            self.cc.set_debug_symbols(true);
+            if debug {
+                self.add_plt_symbols();
+                return;
+            }
+        }
+        if self.load_symbols_using_build_id() || self.load_symbols_using_debug_link() {
+            self.add_plt_symbols();
+            return;
+        }
+
+        let section = self.find_section(SHT_DYNSYM, b".dynsym");
+        if !section.is_null() {
+            self.load_symbol_table(section);
+        }
+    }
+
+    unsafe fn load_symbols_using_debug_link(&mut self) -> bool {
+        let section = self.find_section(SHT_PROGBITS, b".gnu_debuglink");
+        if section.is_null() || (*section).sh_size < 4 {
+            return false;
+        }
+        let file_name = self.file_name.unwrap();
+        let pos = match file_name.iter().position(|s| s == &b'/') {
+            Some(n) => n,
+            None => return false,
+        };
+        let base_name = &file_name[pos..];
+        let dirname = &file_name[..pos];
+        let debuglink = self.at_section(section);
+        let debuglink = CStr::from_ptr(debuglink).to_bytes();
+        let mut result = false;
+        if debuglink != &base_name[1..] {
+            let mut path = Vec::new();
+            vec_append_slice!(path, dirname, b"/", debuglink);
+            let path_str =  std::str::from_utf8_unchecked(&path);
+            result = Self::parse_file(self.cc, self.base, path_str, false);
+        }
+
+        if !result {
+            let mut path = Vec::new();
+            vec_append_slice!(path, dirname, b"/.debug/", debuglink);
+            let path_str =  std::str::from_utf8_unchecked(&path);
+            result = Self::parse_file(self.cc, self.base, path_str, false);
+        }
+
+        if !result {
+            let mut path = Vec::new();
+            vec_append_slice!(path, b"/usr/lib/debug", dirname, b"/", debuglink);
+            let path_str =  std::str::from_utf8_unchecked(&path);
+            result = Self::parse_file(self.cc, self.base, path_str, false);
+        }
+        result
+    }
+
+    unsafe fn load_symbols_using_build_id(&mut self) -> bool {
+        let section = self.find_section(SHT_NOTE, b".note.gnu.build-id");
+        if section.is_null() || (*section).sh_size <= 16 {
+            return false;
+        }
+        let note = self.at_section(section) as *const ElfNote;
+        if (*note).n_namesz !=4 || (*note).n_descsz < 2 || (*note).n_descsz > 64 {
+            return false;
+        }
+        let build_id = (note as *const i8).add(4 + mem::size_of::<ElfNote>());
+        let build_id_len = (*note).n_descsz;
+        let mut path = format!("/usr/lib/debug/.build-id/{:02x}", *build_id);
+        for i in 1..build_id_len {
+            path += &format!("{:02x}", *build_id.add(i as _));
+        }
+        path += ".debug";
+
+        return Self::parse_file(self.cc, self.base, &path, false);
+    }
+
+    unsafe fn add_relocation_symbols(&mut self, reltab: *const ElfSection, plt: *const i8) {
+        let symtab = self.section((*reltab).sh_link as _);
+        let symbols = self.at_section(symtab);
+
+        let strtab = self.section((*symtab).sh_link as _);
+        let strings = self.at_section(strtab);
+
+        let mut relocatons = self.at_section(reltab);
+        let relocatons_end = relocatons.add((*reltab).sh_size as _);
+        while relocatons < relocatons_end {
+            let r = relocatons as *const ElfRelocation;
+            let offset = ELF_R_SYM!((*r).r_info)*(*symtab).sh_entsize;
+            let sym = symbols.offset(offset as _) as *const ElfSymbol;
+            let mut name = vec![];
+            if (*sym).st_name == 0 {
+                name.copy_from_slice(b"@plt");
+            } else {
+                let sym_name_ptr = strings.offset((*sym).st_name as _);
+                let sym_name = CStr::from_ptr(sym_name_ptr).to_bytes();
+                name.extend_from_slice(sym_name);
+                let chr = if sym_name[0] == b'_' && sym_name[1] == b'Z' {
+                    b'.'
+                } else {
+                    b'@'
+                };
+                name.push(chr);
+                name.extend_from_slice(b"plt");
+            }
+            name.push(b'\0');
+            self.cc.add(plt, PLT_ENTRY_SIZE as _, name.as_ptr() as _, false);
+            relocatons = relocatons.add((*reltab).sh_entsize as _);
+        }
+
+    }
+
+    unsafe fn load_symbol_table(&mut self, symtab: *const ElfSection) {
+        let strtab = self.section((*symtab).sh_link as _);
+        let strings = self.at_section(strtab) as *const u8;
+        let mut symbols = self.at_section(symtab) ;
+        let symbols_end = symbols.offset((*symtab).sh_size as _);
+        while symbols < symbols_end {
+            let sym =  symbols as *const ElfSymbol;
+            if (*sym).st_name != 0 && (*sym).st_value != 0 {
+                // Skip special AArch64 mapping symbols: $x and $d
+                if (*sym).st_size != 0 || (*sym).st_info != 0 || *strings.add((*sym).st_name as _) != b'$' {
+                    let sec_base = self.base.add((*sym).st_value as _);
+                    let size = (*sym).st_size as _;
+                    let name = strings.add((*sym).st_name as _) as _;
+                    self.cc.add(sec_base, size, name, false);
+                }
+            }
+            symbols = symbols.add((*symtab).sh_entsize as _);
+        }
     }
 
     #[inline(always)]
@@ -360,11 +615,18 @@ impl<'a, 'b> ElfParser<'a, 'b> {
     }
 
     unsafe fn parse_program_headers(cc: &'a mut CodeCache, base: *const i8, end: *const i8) {
-        let mut elf_parser = ElfParser::new(cc, base, base, &[]);
+        let mut elf_parser = ElfParser::new(cc, base, base, None);
         if elf_parser.valid_header() && base.offset((*elf_parser.header).e_phoff as _) < end {
             elf_parser.set_text_base(base);
             elf_parser.calc_virtual_local_address();
             elf_parser.parse_dynamic_section();
+        }
+    }
+
+    unsafe fn parse_mem(cc: &'a mut CodeCache, base: *const i8) {
+        let mut elf = ElfParser::new(cc, base, base, None);
+        if elf.valid_header() {
+            elf.load_symbols(false);
         }
     }
 
@@ -461,6 +723,7 @@ impl<'a, 'b> ElfParser<'a, 'b> {
     }
 }
 
+#[cfg(test)]
 mod test {
     use super::*;
     #[test]

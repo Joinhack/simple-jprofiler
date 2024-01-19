@@ -8,7 +8,7 @@ macro_rules! regm {
 }
 macro_rules! regl {
     ($s:ident, $r: expr) => {
-        (*$s.ucontext).uc_mcontext.gregs[$r as usize] as &mut uintptr_t
+        &mut (*$s.ucontext).uc_mcontext.gregs[$r as usize] as *mut _ as *mut uintptr_t
     };
 }
 
@@ -69,12 +69,12 @@ macro_rules! reg {
 }
 
 pub(crate) struct StackFrameImpl {
-    ucontext: *const libc::ucontext_t,
+    ucontext: *mut libc::ucontext_t,
 }
 
 impl StackFrameImpl {
     #[inline(always)]
-    pub fn new(ucontext: *const libc::ucontext_t) -> Self {
+    pub fn new(ucontext: *mut libc::ucontext_t) -> Self {
         Self { ucontext }
     }
 

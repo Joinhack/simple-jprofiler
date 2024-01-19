@@ -63,8 +63,7 @@ impl OSImpl {
             libc::THREAD_BASIC_INFO as _,
             info.as_mut_ptr() as _,
             &mut info_size as *mut _ as _,
-        ) != 0
-        {
+        ) != 0 {
             return ThreadState::Invalid;
         }
         if (*info.as_ptr()).run_state == libc::TH_STATE_RUNNING {
@@ -141,5 +140,10 @@ impl OSThreadListImpl {
         } else {
             None
         }
+    }
+
+    pub fn size(&mut self) -> u32 {
+        self.ensure_thread_array();
+        self.thread_count as _
     }
 }
