@@ -53,7 +53,6 @@ mod x86_64_i386 {
 #[cfg(any(target_arch = "x86_64", target_arch = "i386"))]
 use x86_64_i386::*;
 
-
 #[cfg(any(target_arch = "arm", target_arch = "thumb"))]
 mod arm {
     pub const PLT_ENTRY_SIZE: u32 = 12;
@@ -116,8 +115,8 @@ mod target_64 {
     #[repr(C)]
     #[allow(non_camel_case_types)]
     pub struct Elf64_Dyn {
-        pub d_un: UnnamedDyn64,
         pub d_tag: libc::Elf64_Sxword,
+        pub d_un: UnnamedDyn64,
     }
 
     pub const ELFCLASS_SUPPORTED: u8 = libc::ELFCLASS64;
@@ -169,8 +168,8 @@ mod target_32 {
     #[repr(C)]
     #[allow(non_camel_case_types)]
     pub struct Elf32_Dyn {
-        d_un: UnnamedDyn,
         d_tag: Elf32_Sword,
+        d_un: UnnamedDyn,
     }
 
     pub const ELFCLASS_SUPPORTED: u8 = libc::ELFCLASS32;
@@ -203,9 +202,10 @@ struct MemoryMapDesc<'a> {
     file: &'a [u8],
 }
 
-macro_rules! split {
-    ($split: ident, $s: expr) => {
-        match $split.iter().position(|a| *a == $s) {
+/// split slice when the 'end' byte.
+macro_rules! split_when {
+    ($split: ident, $end: expr) => {
+        match $split.iter().position(|a| *a == $end) {
             Some(pos) => (&$split[0..pos], &$split[pos + 1..]),
             None => ($split, &[][..]),
         }
@@ -215,12 +215,12 @@ macro_rules! split {
 impl<'a> MemoryMapDesc<'a> {
     fn parse(line: &'a [u8]) -> Self {
         let split = line;
-        let (addr, split) = split!(split, b'-');
-        let (end, split) = split!(split, b' ');
-        let (perm, split) = split!(split, b' ');
-        let (offs, split) = split!(split, b' ');
-        let (dev, split) = split!(split, b' ');
-        let (inode, split) = split!(split, b' ');
+        let (addr, split) = split_when!(split, b'-');
+        let (end, split) = split_when!(split, b' ');
+        let (perm, split) = split_when!(split, b' ');
+        let (offs, split) = split_when!(split, b' ');
+        let (dev, split) = split_when!(split, b' ');
+        let (inode, split) = split_when!(split, b' ');
         let pos = split.iter().position(|s| *s != b' ');
         let file = match pos {
             Some(pos) => &split[pos..],
@@ -237,6 +237,7 @@ impl<'a> MemoryMapDesc<'a> {
         }
     }
 
+    #[inline(always)]
     fn is_readable(&self) -> bool {
         self.perm[0] == b'r'
     }
@@ -249,26 +250,32 @@ impl<'a> MemoryMapDesc<'a> {
         }
     }
 
+    #[inline(always)]
     pub fn end(&self) -> *const i8 {
         unsafe { Self::str_to_addr(self.end, 16) as _ }
     }
 
+    #[inline(always)]
     pub fn addr(&self) -> *const i8 {
         unsafe { Self::str_to_addr(self.addr, 16) as _ }
     }
 
+    #[inline(always)]
     pub fn offs(&self) -> u64 {
         unsafe { Self::str_to_addr(self.offs, 16) as _ }
     }
 
+    #[inline(always)]
     pub fn inode(&self) -> u64 {
         unsafe { Self::str_to_addr(self.inode, 10) as _ }
     }
 
+    #[inline(always)]
     pub fn is_empty_file(&self) -> bool {
         self.file.len() == 0
     }
 
+    #[inline(always)]
     pub fn file(&self) -> &str {
         unsafe {
             std::str::from_utf8_unchecked(self.file)
@@ -277,7 +284,7 @@ impl<'a> MemoryMapDesc<'a> {
 
     pub fn dev(&self) -> u64 {
         let dev = self.dev;
-        let (maj, min) = split!(dev, b':');
+        let (maj, min) = split_when!(dev, b':');
         let maj = unsafe { Self::str_to_addr(maj, 16) };
         let min = unsafe { Self::str_to_addr(min, 16) };
         (maj << 8) | min
@@ -301,6 +308,7 @@ impl SymbolParserImpl {
         }
     }
 
+    /// parse the libraries in maps file.
     pub fn parse_libraries(&mut self, code_caches: &mut Vec<CodeCache>, _parse_kernel: bool) {
         let mut map_file = match fs::OpenOptions::new().read(true).open("/proc/self/maps") {
             Ok(f) => BufReader::new(f),
@@ -345,7 +353,7 @@ impl SymbolParserImpl {
                     if inode != 0 {
                         // Do not parse the same executable twice, e.g. on Alpine Linux
                         if self.parsed_inode.insert(desc.dev() << 32 | inode) {
-                            image_base = unsafe { image_base.offset(-(desc.offs() as isize)) };
+                            image_base =  image_base.offset(-(desc.offs() as isize));
                             if image_base >= last_readable_base {
                                 ElfParser::parse_program_headers(&mut cc, image_base, image_end);
                             }
@@ -614,6 +622,10 @@ impl<'a, 'b> ElfParser<'a, 'b> {
         }
     }
 
+    unsafe fn parse_dwarf_info(&mut self) {
+        
+    }
+
     unsafe fn parse_program_headers(cc: &'a mut CodeCache, base: *const i8, end: *const i8) {
         let mut elf_parser = ElfParser::new(cc, base, base, None);
         if elf_parser.valid_header() && base.offset((*elf_parser.header).e_phoff as _) < end {
@@ -670,6 +682,7 @@ impl<'a, 'b> ElfParser<'a, 'b> {
                     false,
                 );
             } else if rel.is_null() && relsz != 0 {
+                // RELRO technique: .got.plt has been merged into got with readonly.
                 let mut min_addr: *const *const () = -1 as _;
                 let mut max_addr: *const *const () = 0 as _;
                 let mut offs = relcount * relent;

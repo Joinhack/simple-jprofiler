@@ -2,9 +2,14 @@
 use std::{ops::Add, ptr};
 const DW_STACK_SLOT: i32 = std::mem::size_of::<*const ()>() as _;
 
+#[cfg(any(target_arch = "x86_64", target_arch = "i386"))]
+pub const DWARF_SUPPORTED: bool = true;
+
+#[cfg(not(any(target_arch = "x86_64", target_arch = "i386")))]
+pub const DWARF_SUPPORTED: bool = false;
+
 #[cfg(target_pointer_width = "64")]
 mod target64 {
-    pub const DWARF_SUPPORTED: bool = true;
     pub const DW_REG_FP: i32 = 6;
     pub const DW_REG_SP: i32 = 7;
     pub const DW_REG_PC: i32 = 8;
@@ -15,7 +20,6 @@ use target64::*;
 
 #[cfg(target_pointer_width = "32")]
 mod target32 {
-    pub const DWARF_SUPPORTED: bool = true;
     pub const DW_REG_FP: i32 = 5;
     pub const DW_REG_SP: i32 = 4;
     pub const DW_REG_PC: i32 = 8;
@@ -44,6 +48,8 @@ struct DwarfParser {
     image_base: *const i8,
     code_align: u32,
     data_align: i32,
+    table: Vec<FrameDesc>,
+    prev_idx: isize,
 }
 
 impl DwarfParser {
@@ -53,10 +59,16 @@ impl DwarfParser {
             image_base,
             code_align: 0,
             data_align: 0,
+            table: Vec::new(),
+            prev_idx: -1,
             ptr: ptr::null(),
         };
         parser.parse(eh_frame_hdr);
         parser
+    }
+
+    fn prev(&self) -> Option<&FrameDesc> {
+        self.table.get(self.prev_idx as usize)
     }
 
     /// parse the .eh_frame_hdr section
